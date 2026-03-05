@@ -14,6 +14,12 @@
             "path": "plugins/batch-cherry-pick",
             "description": "Batch cherry-pick workflow with multi-agent review, conflict handling, and cross-session resume.",
             "version": "1.0.0"
+        },
+        {
+            "name": "code-review",
+            "path": "plugins/code-review",
+            "description": "Multi-agent adversarial code review with dual-team architecture, multi-round discussion, and severity-based issue tracking.",
+            "version": "1.0.0"
         }
     ]
 }
