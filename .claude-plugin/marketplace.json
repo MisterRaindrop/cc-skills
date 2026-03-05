@@ -1,0 +1,19 @@
+{
+    "name": "cc-skills-marketplace",
+    "owner": {
+        "name": "MisterRaindrop",
+        "url": "https://github.com/MisterRaindrop/cc-skills"
+    },
+    "metadata": {
+        "description": "Claude Code skills marketplace.",
+        "version": "1.0.0"
+    },
+    "plugins": [
+        {
+            "name": "batch-cherry-pick",
+            "path": "plugins/batch-cherry-pick",
+            "description": "Batch cherry-pick workflow with multi-agent review, conflict handling, and cross-session resume.",
+            "version": "1.0.0"
+        }
+    ]
+}
