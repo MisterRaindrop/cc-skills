@@ -41,45 +41,108 @@ Multi-agent adversarial code review with dual-team architecture.
 
 ## Installation
 
-### Step 1: Clone this repo
+There are three ways to install these plugins. Pick whichever works for you.
+
+### Option A: Quick Test (no install needed)
+
+Just want to try a plugin? Use the `--plugin-dir` flag. Nothing is installed permanently.
 
 ```bash
+# 1. Clone this repo
 git clone https://github.com/MisterRaindrop/cc-skills.git
+cd cc-skills
+
+# 2. Run Claude Code with the plugin loaded directly
+claude --plugin-dir ./plugins/cherry-pick
+
+# That's it. The plugin is active for this session only.
+# You can load multiple plugins at once:
+claude --plugin-dir ./plugins/cherry-pick --plugin-dir ./plugins/knowledge
 ```
 
-Pick a location you won't accidentally delete. The path doesn't matter.
+When you close Claude Code, the plugins are gone. No cleanup needed.
 
-### Step 2: Open Claude Code settings
+### Option B: Install from Local Marketplace (persistent)
 
-Run Claude Code, then open the settings menu:
+This installs the plugins permanently so they're always available.
 
+```bash
+# 1. Clone this repo somewhere permanent
+git clone https://github.com/MisterRaindrop/cc-skills.git ~/cc-skills
 ```
+
+```bash
+# 2. Start Claude Code
 claude
 ```
 
-Then type `/settings` and press Enter.
-
-### Step 3: Add this repo as a plugin source
-
-In the settings, navigate to **Plugins** (or **Skills**). Add this repo's local path as a plugin source:
-
 ```
-/path/to/where/you/cloned/cc-skills
+# 3. Inside Claude Code, add this repo as a marketplace
+/plugin marketplace add ~/cc-skills
 ```
 
-Claude Code will scan the `.claude-plugin/marketplace.json` file and discover all available plugins.
+Claude Code reads the `.claude-plugin/marketplace.json` file and discovers all available plugins.
 
-### Step 4: Install the plugins you want
+```
+# 4. Install the plugins you want
+/plugin install cherry-pick@cc-skills-marketplace
+/plugin install knowledge@cc-skills-marketplace
+/plugin install code-review@cc-skills-marketplace
+```
 
-After adding the source, you'll see the available plugins listed. Select the ones you want to install:
+You can choose the install scope:
+- **user** (default) -- available everywhere, for just you
+- **project** -- available only in the current git repo
+- **local** -- available only in the current directory
 
-- **cherry-pick** -- no extra setup needed
-- **code-review** -- no extra setup needed
-- **knowledge** -- requires Obsidian configuration (see below)
+```
+# Example: install only for the current project
+/plugin install cherry-pick@cc-skills-marketplace --scope project
+```
 
-### Step 5: Verify
+### Option C: Install from GitHub (no clone needed)
 
-Start a new Claude Code session and type `/` to see available commands. You should see your installed plugins' commands (e.g., `/cherry-pick:commit`, `/knowledge:save`).
+Skip the clone entirely. Point Claude Code straight at the GitHub repo.
+
+```bash
+# 1. Start Claude Code
+claude
+```
+
+```
+# 2. Add the GitHub repo as a marketplace
+/plugin marketplace add MisterRaindrop/cc-skills
+```
+
+```
+# 3. Install plugins
+/plugin install cherry-pick@cc-skills-marketplace
+/plugin install knowledge@cc-skills-marketplace
+/plugin install code-review@cc-skills-marketplace
+```
+
+### Verify It Worked
+
+Start a new Claude Code session and type `/`. You should see your installed plugins' commands in the list:
+
+```
+/cherry-pick:commit
+/cherry-pick:plan
+/cherry-pick:batch
+/cherry-pick:review
+/knowledge:save
+/knowledge:maintain
+/code-review:review
+...
+```
+
+If you don't see them, run `/plugin` to open the plugin manager and check the installed list.
+
+### Uninstall
+
+```
+/plugin uninstall cherry-pick
+```
 
 ---
 
