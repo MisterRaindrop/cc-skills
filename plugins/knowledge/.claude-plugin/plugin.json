@@ -1,0 +1,16 @@
+{
+    "name": "knowledge",
+    "description": "Obsidian-powered knowledge management for Claude Code. Archive dev experiences, maintain knowledge freshness, and retrieve historical insights via semantic search.",
+    "version": "1.0.0",
+    "author": {
+        "name": "MisterRaindrop"
+    },
+    "commands": [
+        "./commands/save.md",
+        "./commands/maintain.md"
+    ],
+    "skills": [
+        "./skills/knowledge-archive/",
+        "./skills/knowledge-maintain/"
+    ]
+}
