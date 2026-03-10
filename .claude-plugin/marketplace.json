@@ -1,8 +1,7 @@
 {
     "name": "cc-skills-marketplace",
     "owner": {
-        "name": "MisterRaindrop",
-        "url": "https://github.com/MisterRaindrop/cc-skills"
+        "name": "MisterRaindrop"
     },
     "metadata": {
         "description": "Claude Code skills marketplace.",
@@ -10,15 +9,45 @@
     },
     "plugins": [
         {
-            "name": "batch-cherry-pick",
-            "path": "plugins/batch-cherry-pick",
-            "description": "Batch cherry-pick workflow with multi-agent review, conflict handling, and cross-session resume.",
+            "name": "cherry-pick",
+            "source": "./plugins/cherry-pick",
+            "description": "Smart cherry-pick workflow: single commit (quick or planned), batch mode with auto option, and multi-agent adversarial code review.",
+            "version": "2.0.0"
+        },
+        {
+            "name": "knowledge",
+            "source": "./plugins/knowledge",
+            "description": "Obsidian-powered knowledge management: archive dev experiences with /knowledge:save, maintain freshness with /knowledge:maintain.",
             "version": "1.0.0"
         },
         {
             "name": "code-review",
-            "path": "plugins/code-review",
+            "source": "./plugins/code-review",
             "description": "Multi-agent adversarial code review with dual-team architecture, multi-round discussion, and severity-based issue tracking.",
+            "version": "1.0.0"
+        },
+        {
+            "name": "pxf",
+            "source": "./plugins/pxf",
+            "description": "PXF development automation: environment setup, build (server/cli/fdw), and test runner for Cloudberry PXF.",
+            "version": "1.0.0"
+        },
+        {
+            "name": "singlecluster",
+            "source": "./plugins/singlecluster",
+            "description": "Singlecluster (Hive/HDFS/Spark/MinIO/Polaris) deployment automation: deploy, health check, diagnose & fix, and teardown.",
+            "version": "1.0.0"
+        },
+        {
+            "name": "ssh-mcp",
+            "source": "./plugins/ssh-mcp",
+            "description": "SSH MCP session management: setup @iflow-mcp/ssh-mcp-sessions, add/remove/list SSH hosts with persistent sessions.",
+            "version": "1.0.0"
+        },
+        {
+            "name": "worktree",
+            "source": "./plugins/worktree",
+            "description": "Git worktree management: create, list, and remove worktrees with smart defaults and branch handling.",
             "version": "1.0.0"
         }
     ]

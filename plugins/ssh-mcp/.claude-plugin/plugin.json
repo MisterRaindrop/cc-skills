@@ -1,0 +1,14 @@
+{
+    "name": "ssh-mcp",
+    "description": "SSH MCP session management: setup @iflow-mcp/ssh-mcp-sessions, add/remove/list SSH hosts with persistent sessions.",
+    "version": "1.0.0",
+    "author": {
+        "name": "MisterRaindrop"
+    },
+    "commands": [
+        "./commands/setup.md",
+        "./commands/add.md",
+        "./commands/remove.md",
+        "./commands/list.md"
+    ]
+}

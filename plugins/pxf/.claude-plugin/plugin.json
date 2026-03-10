@@ -1,0 +1,13 @@
+{
+    "name": "pxf",
+    "description": "PXF development automation: environment setup, build (server/cli/fdw), and test runner for Cloudberry PXF.",
+    "version": "1.0.0",
+    "author": {
+        "name": "MisterRaindrop"
+    },
+    "commands": [
+        "./commands/setup.md",
+        "./commands/test.md",
+        "./commands/build.md"
+    ]
+}

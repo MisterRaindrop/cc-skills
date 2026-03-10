@@ -1,0 +1,14 @@
+{
+    "name": "singlecluster",
+    "description": "Singlecluster (Hive/HDFS/Spark/MinIO/Polaris) deployment automation: deploy, health check, diagnose & fix, and teardown.",
+    "version": "1.0.0",
+    "author": {
+        "name": "MisterRaindrop"
+    },
+    "commands": [
+        "./commands/deploy.md",
+        "./commands/status.md",
+        "./commands/fix.md",
+        "./commands/down.md"
+    ]
+}

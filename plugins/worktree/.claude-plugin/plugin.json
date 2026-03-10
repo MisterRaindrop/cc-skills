@@ -1,0 +1,13 @@
+{
+    "name": "worktree",
+    "description": "Git worktree management: create, list, and remove worktrees with smart defaults and branch handling.",
+    "version": "1.0.0",
+    "author": {
+        "name": "MisterRaindrop"
+    },
+    "commands": [
+        "./commands/create.md",
+        "./commands/list.md",
+        "./commands/remove.md"
+    ]
+}
