@@ -1,0 +1,14 @@
+{
+    "name": "datalake",
+    "description": "Datalake FDW development automation: build, test, coverage collection, and singlecluster Docker environment management.",
+    "version": "1.0.0",
+    "author": {
+        "name": "MisterRaindrop"
+    },
+    "commands": [
+        "./commands/singlecluster.md",
+        "./commands/build.md",
+        "./commands/test.md",
+        "./commands/coverage.md"
+    ]
+}
