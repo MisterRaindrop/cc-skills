@@ -15,7 +15,7 @@ Docker 环境管理、编译、测试、结果解析一站式自动化，基于 
 ## Prerequisites
 
 - Docker Desktop（已启动）
-- [cloudberry-pxf](https://github.com/apache/cloudberry-pxf) 源码仓库（包含 `dev/` 目录下的脚本）
+- [cloudberry-pxf](https://github.com/apache/cloudberry-pxf) 源码仓库（脚本会自动定位）
 
 ## Installation
 
@@ -54,6 +54,27 @@ claude
 
 /plugin marketplace add MisterRaindrop/cc-skills
 /plugin install pxf@cc-skills-marketplace
+```
+
+### Update（已安装过，更新到新版本）
+
+```bash
+# 1. 刷新 marketplace 索引
+/plugin marketplace update cc-skills-marketplace
+
+# 2. 更新插件
+/plugin update pxf@cc-skills-marketplace
+
+# 3. 重载生效
+/reload-plugins
+```
+
+如果 update 不生效，可以先卸后装：
+
+```bash
+/plugin uninstall pxf
+/plugin install pxf@cc-skills-marketplace
+/reload-plugins
 ```
 
 ### Verify
@@ -116,32 +137,30 @@ claude
 ## Architecture
 
 ```
-Host (macOS/Linux)                      Docker (pxf-cbdb-dev)
-─────────────────                       ─────────────────────
-/pxf:docker-up                          entrypoint.sh
-  └─> dev/docker-up.sh ──docker──>        ├── build Cloudberry
-                                          ├── build PXF
-/pxf:build                                ├── start Hadoop/Hive/HBase
-  └─> dev/build.sh ──docker exec──>       └── start MinIO
-        └── gradlew / make
+cc-skills/plugins/pxf/                  Docker (pxf-cbdb-dev)
+  scripts/                              ─────────────────────
+    docker-up.sh ──docker compose──>    entrypoint.sh
+    build.sh ──docker exec──>             ├── build Cloudberry / PXF
+    test.sh ──docker exec──>              ├── start Hadoop/Hive/HBase/MinIO
+    parse-results.sh                      └── run_tests.sh
+    detect-pxf-repo.sh
                                         Volume mount:
-/pxf:test                                cloudberry-pxf/ <──>
-  └─> dev/test.sh ──docker exec──>          /home/gpadmin/workspace/cloudberry-pxf/
-        └── run_tests.sh
-
-/pxf:parse-results
-  └─> dev/parse-results.sh
-        └── reads automation/target/surefire-reports/
+  commands/                              cloudberry-pxf/ <──>
+    docker-up.md   (skill definition)      /home/gpadmin/workspace/cloudberry-pxf/
+    build.md
+    test.md
+    ...
 ```
 
-Skills 只是薄封装层，实际逻辑在 `dev/*.sh` 脚本中。脚本也可以直接在终端运行：
+脚本打包在插件的 `scripts/` 目录中，通过 `detect-pxf-repo.sh` 自动定位 cloudberry-pxf 仓库。
+
+脚本也可以直接在终端运行（需要 cd 到 cloudberry-pxf 目录下）：
 
 ```bash
-./dev/docker-up.sh
-./dev/build.sh pxf-hdfs
-./dev/test.sh smoke
-./dev/parse-results.sh --failures-only
-./dev/docker-down.sh
+/path/to/cc-skills/plugins/pxf/scripts/docker-up.sh
+/path/to/cc-skills/plugins/pxf/scripts/build.sh pxf-hdfs
+/path/to/cc-skills/plugins/pxf/scripts/test.sh smoke
+/path/to/cc-skills/plugins/pxf/scripts/parse-results.sh --failures-only
 ```
 
 ## Uninstall

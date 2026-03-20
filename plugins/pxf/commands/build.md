@@ -28,34 +28,12 @@ Build and deploy PXF components inside the pxf-cbdb-dev Docker container.
 
 You are executing the `/pxf:build` command. Follow these steps precisely:
 
-### Step 1: Locate PXF Repository
-
-Find the cloudberry-pxf repo root directory containing `dev/build.sh`.
-
-Search strategy:
-1. Current working directory or its parents
-2. Common paths: `~/workspace/cloudberry-pxf`, `~/github/cloudberry-pxf`
-
-If not found, ask the user for the path. Store as `PXF_REPO`.
-
-### Step 2: Verify Container is Running
-
-```bash
-docker ps --format '{{.Names}}' | grep -q '^pxf-cbdb-dev$'
-```
-
-If the container is not running, tell the user:
-
-> Container `pxf-cbdb-dev` is not running. Start it with `/pxf:docker-up` first.
-
-Stop here.
-
-### Step 3: Auto-detect Target (if no argument provided)
+### Step 1: Auto-detect Target (if no argument provided)
 
 If no target argument was given, analyze `git diff` to suggest a target:
 
 ```bash
-cd "$PXF_REPO" && git diff --name-only HEAD
+git diff --name-only HEAD
 ```
 
 | Changed path pattern | Suggested target |
@@ -70,17 +48,18 @@ cd "$PXF_REPO" && git diff --name-only HEAD
 
 Show the suggestion and ask the user to confirm, or let them override.
 
-### Step 4: Run the Build
+### Step 2: Run the Build
 
 ```bash
-"$PXF_REPO/dev/build.sh" $ARGUMENTS
+"${CLAUDE_SKILL_DIR}/../scripts/build.sh" $ARGUMENTS
 ```
 
 The script:
-1. Runs the build command via `docker exec` inside `pxf-cbdb-dev`
-2. Automatically restarts PXF after build (unless `--no-restart`)
+1. Locates the cloudberry-pxf repo automatically
+2. Runs the build command via `docker exec` inside `pxf-cbdb-dev`
+3. Automatically restarts PXF after build (unless `--no-restart`)
 
-### Step 5: Report Result
+### Step 3: Report Result
 
 ```
 ## Build Complete
@@ -94,7 +73,6 @@ Run `/pxf:test` to verify your changes.
 If the build fails, show the error and suggest:
 - Check if it's a compilation error → fix the code
 - Check if it's a dependency issue → try `all` target for a clean build
-- For module-specific errors → try `./dev/build.sh <module>` with verbose output
 
 ### Important Notes
 
@@ -102,4 +80,3 @@ If the build fails, show the error and suggest:
 - The `quick` target is fastest — just deploys pre-built binaries without recompilation
 - Single module builds (e.g., `pxf-hdfs`) are the sweet spot for iterative development
 - PXF is automatically restarted after build to pick up new binaries
-- The container shares the PXF source via volume mount, so local edits are immediately visible

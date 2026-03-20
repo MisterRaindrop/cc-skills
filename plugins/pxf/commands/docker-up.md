@@ -16,33 +16,21 @@ Start the PXF development Docker environment (pxf-cbdb-dev container with Cloudb
 
 You are executing the `/pxf:docker-up` command. Follow these steps precisely:
 
-### Step 1: Locate PXF Repository
+### Step 1: Run the Script
 
-Find the cloudberry-pxf repo root directory. The repo must contain `dev/docker-up.sh`.
-
-Search strategy:
-1. Current working directory or its parents
-2. Common paths: `~/workspace/cloudberry-pxf`, `~/github/cloudberry-pxf`
-
-If not found, ask the user for the path.
-
-Store the resolved path as `PXF_REPO`.
-
-### Step 2: Run the Script
-
-Execute the docker-up script:
+Execute the docker-up script bundled with this plugin:
 
 ```bash
-"$PXF_REPO/dev/docker-up.sh" $ARGUMENTS
+"${CLAUDE_SKILL_DIR}/../scripts/docker-up.sh" $ARGUMENTS
 ```
 
-This script will:
-1. Check if `pxf-cbdb-dev` container is already running
-2. If not running, run `docker compose up -d --build` using `ci/docker/pxf-cbdb-dev/ubuntu/docker-compose.yml`
-3. Execute `entrypoint.sh` inside the container (builds Cloudberry, PXF, starts Hadoop/Hive/HBase/MinIO)
-4. Verify PXF health endpoint at `http://localhost:5888/actuator/health`
+The script will automatically locate the cloudberry-pxf repo (searches CWD parents and common paths). It then:
+1. Checks if `pxf-cbdb-dev` container is already running
+2. If not running, runs `docker compose up -d --build`
+3. Executes `entrypoint.sh` inside the container (builds Cloudberry, PXF, starts Hadoop/Hive/HBase/MinIO)
+4. Verifies PXF health endpoint at `http://localhost:5888/actuator/health`
 
-### Step 3: Report Result
+### Step 2: Report Result
 
 If the script succeeds, show the connection info:
 
@@ -61,11 +49,10 @@ If the script fails, show the error output and suggest:
 - Check Docker is running: `docker info`
 - Check logs: `docker logs pxf-cbdb-dev`
 - Retry with `--skip-init` if the container is already partially set up
+- If repo not found, `cd` into the cloudberry-pxf directory first
 
 ### Important Notes
 
 - First startup takes 10-20 minutes (builds Cloudberry from source, sets up Hadoop stack)
 - Subsequent startups are much faster if using `--skip-init`
 - The container mounts the PXF repo at `/home/gpadmin/workspace/cloudberry-pxf`
-- Docker Compose file: `ci/docker/pxf-cbdb-dev/ubuntu/docker-compose.yml`
-- Entrypoint script: `ci/docker/pxf-cbdb-dev/ubuntu/script/entrypoint.sh`

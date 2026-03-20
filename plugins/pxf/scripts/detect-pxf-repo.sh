@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
 # detect-pxf-repo.sh - Find the cloudberry-pxf repo root
-# Searches common locations and verifies dev/ scripts exist.
+# Searches CWD parents and common locations, verifies Makefile + ci/ exist.
 # Exit 0 + prints repo path if found, exit 1 if not found.
 
 set -euo pipefail
 
-# Strategy 1: current directory or parents
 check_dir() {
-    if [ -d "$1/dev" ] && [ -f "$1/dev/docker-up.sh" ] && [ -f "$1/Makefile" ]; then
+    if [ -d "$1/ci/docker/pxf-cbdb-dev" ] && [ -f "$1/Makefile" ]; then
         echo "$1"
         return 0
     fi
     return 1
 }
+
+# If PXF_REPO is set, use it directly
+if [ -n "${PXF_REPO:-}" ] && check_dir "${PXF_REPO}"; then
+    exit 0
+fi
 
 # Walk up from CWD
 dir="$(pwd)"

@@ -44,42 +44,25 @@ Run PXF automation tests inside the pxf-cbdb-dev Docker container and display pa
 
 You are executing the `/pxf:test` command. Follow these steps precisely:
 
-### Step 1: Locate PXF Repository
-
-Find the cloudberry-pxf repo root directory containing `dev/test.sh`.
-
-Search strategy:
-1. Current working directory or its parents
-2. Common paths: `~/workspace/cloudberry-pxf`, `~/github/cloudberry-pxf`
-
-If not found, ask the user for the path. Store as `PXF_REPO`.
-
-### Step 2: Verify Container is Running
+### Step 1: Run Tests
 
 ```bash
-docker ps --format '{{.Names}}' | grep -q '^pxf-cbdb-dev$'
-```
-
-If not running, tell the user to start it with `/pxf:docker-up`.
-
-### Step 3: Run Tests
-
-```bash
-"$PXF_REPO/dev/test.sh" $ARGUMENTS
+"${CLAUDE_SKILL_DIR}/../scripts/test.sh" $ARGUMENTS
 ```
 
 The script:
-1. Dispatches to the correct test runner based on group
-2. For automation tests: runs via `run_tests.sh` inside the container
-3. For server/cli/fdw: runs the appropriate unit test command
-4. Automatically calls `parse-results.sh` to display results
+1. Locates the cloudberry-pxf repo automatically
+2. Dispatches to the correct test runner based on group
+3. For automation tests: runs via `run_tests.sh` inside the container
+4. For server/cli/fdw: runs the appropriate unit test command
+5. Automatically calls `parse-results.sh` to display results
 
-### Step 4: Report Results
+### Step 2: Present Results
 
 The script already calls `parse-results.sh` for automation tests. For additional detail or if `--no-parse` was used, you can run:
 
 ```bash
-"$PXF_REPO/dev/parse-results.sh"
+"${CLAUDE_SKILL_DIR}/../scripts/parse-results.sh"
 ```
 
 Present the results clearly:
@@ -94,7 +77,7 @@ Total: 42  |  Passed: 40  |  Failed: 2  |  Skipped: 0
 - org.example.BazTest#testQux — NullPointerException at line 99
 ```
 
-### Step 5: On Failure, Offer Next Steps
+### Step 3: On Failure, Offer Next Steps
 
 If tests failed:
 1. Show the failure details from surefire reports
@@ -109,23 +92,13 @@ If tests failed:
 - Server unit tests (`server` group) can run without the full stack
 - Test reports are saved to `automation/test_artifacts/<group>/`
 - Surefire XML reports are at `automation/target/surefire-reports/`
-- The `run_tests.sh` script handles group-specific setup (e.g., Hive cleanup before hive tests, MinIO setup before s3 tests)
 
 ### Examples
 
 ```bash
-# Run smoke tests (default)
-/pxf:test
-
-# Run HDFS tests
-/pxf:test hdfs
-
-# Run a specific test class
-/pxf:test smoke TEST=HdfsSmokeTest
-
-# Run a specific test method
-/pxf:test hdfs TEST=HdfsReadableTextTest#testTextFormatSimple
-
-# Run server unit tests
-/pxf:test server
+/pxf:test                    # Run smoke tests (default)
+/pxf:test hdfs               # Run HDFS tests
+/pxf:test smoke TEST=HdfsSmokeTest          # Specific test class
+/pxf:test hdfs TEST=HdfsReadableTextTest#testTextFormatSimple  # Specific method
+/pxf:test server             # Server unit tests
 ```
