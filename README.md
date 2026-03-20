@@ -37,6 +37,20 @@ Multi-agent adversarial code review with dual-team architecture.
 | `/code-review:review-branch` | Review an entire branch diff. |
 | `/code-review:review-config` | Configure review settings. |
 
+### pxf
+
+PXF development automation for Cloudberry PXF. Docker environment, build, test, result parsing.
+
+| Command | What it does |
+|---------|-------------|
+| `/pxf:docker-up` | Start Docker dev environment (Cloudberry + Hadoop + Hive + HBase + MinIO) |
+| `/pxf:docker-down` | Stop/clean Docker environment |
+| `/pxf:build [target]` | Build PXF (all, server, quick, single module like pxf-hdfs) |
+| `/pxf:test [group]` | Run automation tests by group with optional test filter |
+| `/pxf:parse-results` | Parse surefire XML reports into summary table |
+
+**Requires**: Docker, [cloudberry-pxf](https://github.com/apache/cloudberry-pxf) repo with `dev/` scripts. See [pxf plugin README](plugins/pxf/README.md) for details.
+
 ---
 
 ## Installation
