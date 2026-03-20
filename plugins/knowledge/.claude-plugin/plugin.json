@@ -8,9 +8,5 @@
     "commands": [
         "./commands/save.md",
         "./commands/maintain.md"
-    ],
-    "skills": [
-        "./skills/knowledge-archive/",
-        "./skills/knowledge-maintain/"
     ]
 }

@@ -1,197 +1,105 @@
 # /pxf:build
 
-Build and deploy PXF components inside a Cloudberry dev container: server (Java/Gradle), CLI (Go), FDW (C), or auto-detect changed components from git diff.
+Build and deploy PXF components inside the pxf-cbdb-dev Docker container.
 
 ## Usage
 
 ```
-/pxf:build [server|cli|fdw|all]
+/pxf:build [TARGET] [--no-restart]
 ```
 
-**Arguments:**
-- `server` — Build the PXF server (Java/Gradle)
-- `cli` — Build the PXF CLI (Go)
-- `fdw` — Build the PXF FDW extension (C)
-- `all` — Build all three components
-- *(no argument)* — Auto-detect which components changed using `git diff` and build only those
+**Targets:**
+- `all` — Full build: `make all && make install` (default)
+- `server` — Server only: `gradlew stage -x test && make install-server`
+- `quick` — Quick install: `make install-server` (skip compilation, just deploy)
+- `pxf-hdfs` — Single Gradle module: `:pxf-hdfs:build -x test && make install-server`
+- `pxf-jdbc` — Single Gradle module: `:pxf-jdbc:build -x test && make install-server`
+- `pxf-hive` — Single Gradle module: `:pxf-hive:build -x test && make install-server`
+- `pxf-hbase` — Single Gradle module: `:pxf-hbase:build -x test && make install-server`
+- `pxf-json` — Single Gradle module: `:pxf-json:build -x test && make install-server`
+- `pxf-s3` — Single Gradle module: `:pxf-s3:build -x test && make install-server`
+- `extensions` — Extensions only: `make extensions && make install`
+- `test` — Run unit tests: `make test`
+
+**Options:**
+- `--no-restart` — Skip PXF restart after build
 
 ## Instructions
 
 You are executing the `/pxf:build` command. Follow these steps precisely:
 
-### Step 1: Detect Cloudberry Dev Container
+### Step 1: Locate PXF Repository
+
+Find the cloudberry-pxf repo root directory containing `dev/build.sh`.
+
+Search strategy:
+1. Current working directory or its parents
+2. Common paths: `~/workspace/cloudberry-pxf`, `~/github/cloudberry-pxf`
+
+If not found, ask the user for the path. Store as `PXF_REPO`.
+
+### Step 2: Verify Container is Running
 
 ```bash
-docker ps --filter "status=running" --format "{{.ID}} {{.Names}} {{.Image}}" | grep "docker.hashdata.dev/hashdata-releng"
+docker ps --format '{{.Names}}' | grep -q '^pxf-cbdb-dev$'
 ```
 
-If no container is found, tell the user:
+If the container is not running, tell the user:
 
-> No running Cloudberry dev container detected (image prefix: docker.hashdata.dev/hashdata-releng). Please start the container first.
+> Container `pxf-cbdb-dev` is not running. Start it with `/pxf:docker-up` first.
 
-Stop here if no container is found. Extract `CONTAINER_ID` from the first match.
+Stop here.
 
-Locate the PXF source path (same logic as `/pxf:setup` Step 3). Store as `PXF_SRC`.
+### Step 3: Auto-detect Target (if no argument provided)
 
-Also locate the FDW directory. Store as `FDW_DIR`.
-
-Prepare the environment:
-```bash
-ENV_SCRIPT="source ~/.bashrc"
-```
-
-### Step 2: Determine Components to Build
-
-**If an argument is provided** (`server`, `cli`, `fdw`, or `all`):
-Use the specified component(s) directly.
-
-**If no argument is provided** — auto-detect from git diff:
+If no target argument was given, analyze `git diff` to suggest a target:
 
 ```bash
-docker exec $CONTAINER_ID bash -c "
-  cd $PXF_SRC
-  git diff --name-only HEAD
-  git diff --name-only --cached HEAD
-  git diff --name-only HEAD~1..HEAD 2>/dev/null || true
-"
+cd "$PXF_REPO" && git diff --name-only HEAD
 ```
 
-Analyze the changed file paths to determine which components need building:
+| Changed path pattern | Suggested target |
+|---------------------|-----------------|
+| `server/pxf-hdfs/` | `pxf-hdfs` |
+| `server/pxf-jdbc/` | `pxf-jdbc` |
+| `server/pxf-hive/` | `pxf-hive` |
+| `server/` (multiple modules) | `server` |
+| `cli/` | `all` |
+| `fdw/` or `external-table/` | `extensions` |
+| Multiple areas | `all` |
 
-| Changed path pattern      | Component |
-|--------------------------|-----------|
-| `server/`                | server    |
-| `cli/`                   | cli       |
-| `fdw/`                   | fdw       |
-| `gpcontrib/pxf_fdw/`     | fdw       |
-| `build.gradle`, `Makefile` (root) | all |
+Show the suggestion and ask the user to confirm, or let them override.
 
-If no changes are detected:
-
-> No changes detected in PXF source. Specify a component to build: `/pxf:build server|cli|fdw|all`
-
-Stop and wait for user input.
-
-Show the user what will be built:
-
-```
-## Build Plan
-
-Detected changes in: server, cli
-Components to build: server, cli
-
-Proceed?
-```
-
-Wait for user confirmation before building.
-
-### Step 3: Build Components
-
-Build the determined components in order: server, cli, fdw.
-
-#### Build Server (Java/Gradle)
+### Step 4: Run the Build
 
 ```bash
-docker exec $CONTAINER_ID bash -c "
-  $ENV_SCRIPT
-  cd $PXF_SRC/server
-  make install
-"
+"$PXF_REPO/dev/build.sh" $ARGUMENTS
 ```
 
-Record the exit code and build duration.
+The script:
+1. Runs the build command via `docker exec` inside `pxf-cbdb-dev`
+2. Automatically restarts PXF after build (unless `--no-restart`)
 
-If the build fails, show the error and ask the user:
-
-> Server build failed. Retry, skip, or show full log?
-
-- **Retry**: Re-run the build
-- **Skip**: Mark as failed, continue to next component
-- **Show log**: Display the full output, then ask again
-
-#### Build CLI (Go)
-
-```bash
-docker exec $CONTAINER_ID bash -c "
-  $ENV_SCRIPT
-  cd $PXF_SRC/cli
-  make install
-"
-```
-
-Record the exit code and build duration. Follow the same retry/skip flow on failure.
-
-#### Build FDW (C)
-
-```bash
-docker exec $CONTAINER_ID bash -c "
-  source /workspace/dist/database/greenplum_path.sh
-  $ENV_SCRIPT
-  cd $FDW_DIR
-  make && make install
-"
-```
-
-Record the exit code and build duration. Follow the same retry/skip flow on failure.
-
-### Step 4: Restart PXF Service
-
-After all builds complete, restart PXF to pick up changes:
-
-```bash
-docker exec $CONTAINER_ID bash -c "
-  $ENV_SCRIPT
-  pxf stop 2>/dev/null || true
-  pxf start
-"
-```
-
-If PXF was not previously initialized (e.g., `pxf start` fails with "not initialized"), run:
-```bash
-docker exec $CONTAINER_ID bash -c "
-  $ENV_SCRIPT
-  pxf init
-  pxf start
-"
-```
-
-Verify PXF is running:
-```bash
-docker exec $CONTAINER_ID bash -c "
-  $ENV_SCRIPT
-  pxf status
-"
-```
-
-If PXF fails to start and only non-server components were built, this is acceptable. Note it in the summary.
-
-### Step 5: Output Build Summary
+### Step 5: Report Result
 
 ```
-## PXF Build Summary
+## Build Complete
 
-Container: <CONTAINER_NAME> (<CONTAINER_ID>)
-Detection: <auto-detect | manual>
+Target:  <target>
+PXF:     restarted
 
-### Build Results
-| Component | Status  | Duration |
-|-----------|---------|----------|
-| Server    | success | 45s      |
-| CLI       | success | 12s      |
-| FDW       | skipped | —        |
-
-### Service
-PXF Status: running (restarted)
-
-Build complete. Run `/pxf:test` to verify.
+Run `/pxf:test` to verify your changes.
 ```
+
+If the build fails, show the error and suggest:
+- Check if it's a compilation error → fix the code
+- Check if it's a dependency issue → try `all` target for a clean build
+- For module-specific errors → try `./dev/build.sh <module>` with verbose output
 
 ### Important Notes
 
-- All commands execute inside the detected Cloudberry dev container via `docker exec`
-- Auto-detect mode uses `git diff` to minimize build time — only changed components are rebuilt
-- The greenplum_path.sh source is required for FDW builds
-- PXF service is always restarted after builds to pick up new binaries
-- If only FDW was built and PXF is not initialized, skip the restart
-- Build failures in one component do not block building other components
-- Keep output concise — show build status and errors, not full compilation logs
+- All builds run inside the `pxf-cbdb-dev` container via `docker exec`
+- The `quick` target is fastest — just deploys pre-built binaries without recompilation
+- Single module builds (e.g., `pxf-hdfs`) are the sweet spot for iterative development
+- PXF is automatically restarted after build to pick up new binaries
+- The container shares the PXF source via volume mount, so local edits are immediately visible

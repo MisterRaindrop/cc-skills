@@ -1,195 +1,131 @@
 # /pxf:test
 
-Run PXF tests inside a Cloudberry dev container: unit tests (server + CLI), FDW installcheck, integration tests, or all.
+Run PXF automation tests inside the pxf-cbdb-dev Docker container and display parsed results.
 
 ## Usage
 
 ```
-/pxf:test [--type unit|integration|fdw|all] [--group <group>] [--test <TestName>] [--protocol <protocol>]
+/pxf:test [GROUP] [TEST=ClassName] [TEST=ClassName#method] [--no-parse] [--keep-data]
 ```
 
+**Test groups:**
+
+| Group | Description |
+|-------|------------|
+| `smoke` | Smoke tests (default) |
+| `sanity` | Sanity tests |
+| `hdfs` | HDFS read/write tests |
+| `hive` | Hive integration tests |
+| `hbase` | HBase integration tests |
+| `hcatalog` | HCatalog tests |
+| `hcfs` | HCFS tests |
+| `jdbc` | JDBC connector tests |
+| `profile` | Profile tests |
+| `proxy` | Proxy/impersonation tests |
+| `s3` | S3/MinIO tests |
+| `features` | Feature tests |
+| `gpdb` | GPDB integration tests |
+| `gpdb_fdw` | GPDB FDW tests |
+| `load` | Load/benchmark tests |
+| `performance` | Performance tests |
+| `server` | Server unit tests (gradlew) |
+| `cli` | CLI unit tests (go test) |
+| `fdw` | FDW installcheck |
+| `pxf_extension` | PXF extension version tests |
+| `all` | Run all test groups |
+
 **Options:**
-- `--type <type>`: Test type to run (default: `unit`)
-  - `unit` — Server (Gradle) and CLI (Go) unit tests
-  - `fdw` — FDW regression tests via `make installcheck`
-  - `integration` — Maven-based integration tests in automation/
-  - `all` — Run unit, fdw, and integration sequentially
-- `--group <group>`: Test group/category filter (e.g., `HdfsSmokeTest`, `Hive`)
-- `--test <TestName>`: Specific test class or test name to run
-- `--protocol <protocol>`: Protocol filter for integration tests (e.g., `hdfs`, `s3`, `jdbc`)
+- `TEST=ClassName` — Run a specific test class
+- `TEST=ClassName#method` — Run a specific test method
+- `--no-parse` — Skip result parsing
+- `--keep-data` — Keep test data on HDFS between runs
 
 ## Instructions
 
 You are executing the `/pxf:test` command. Follow these steps precisely:
 
-### Step 1: Detect Cloudberry Dev Container
+### Step 1: Locate PXF Repository
+
+Find the cloudberry-pxf repo root directory containing `dev/test.sh`.
+
+Search strategy:
+1. Current working directory or its parents
+2. Common paths: `~/workspace/cloudberry-pxf`, `~/github/cloudberry-pxf`
+
+If not found, ask the user for the path. Store as `PXF_REPO`.
+
+### Step 2: Verify Container is Running
 
 ```bash
-docker ps --filter "status=running" --format "{{.ID}} {{.Names}} {{.Image}}" | grep "docker.hashdata.dev/hashdata-releng"
+docker ps --format '{{.Names}}' | grep -q '^pxf-cbdb-dev$'
 ```
 
-If no container is found, tell the user:
+If not running, tell the user to start it with `/pxf:docker-up`.
 
-> No running Cloudberry dev container detected (image prefix: docker.hashdata.dev/hashdata-releng). Please start the container first.
-
-Stop here if no container is found. Extract `CONTAINER_ID` from the first match.
-
-Locate the PXF source path (same logic as `/pxf:setup` Step 3). Store as `PXF_SRC`.
-
-Also locate the FDW directory. Store as `FDW_DIR`.
-
-Prepare the environment:
-```bash
-ENV_SCRIPT="source ~/.bashrc"
-```
-
-### Step 2: Parse Arguments
-
-Determine the test type from user arguments. Default to `unit` if `--type` is not specified.
-
-If `--type all` is specified, run `unit`, `fdw`, and `integration` sequentially.
-
-### Step 3: Execute Tests by Type
-
-#### Type: `unit`
-
-**Server unit tests (Java/Gradle):**
+### Step 3: Run Tests
 
 ```bash
-docker exec $CONTAINER_ID bash -c "
-  $ENV_SCRIPT
-  cd $PXF_SRC/server
-  make test
-"
+"$PXF_REPO/dev/test.sh" $ARGUMENTS
 ```
 
-If `--test` is provided, run a specific test:
-```bash
-docker exec $CONTAINER_ID bash -c "
-  $ENV_SCRIPT
-  cd $PXF_SRC/server
-  ./gradlew test --tests '*<TestName>*'
-"
-```
+The script:
+1. Dispatches to the correct test runner based on group
+2. For automation tests: runs via `run_tests.sh` inside the container
+3. For server/cli/fdw: runs the appropriate unit test command
+4. Automatically calls `parse-results.sh` to display results
 
-**CLI unit tests (Go):**
+### Step 4: Report Results
+
+The script already calls `parse-results.sh` for automation tests. For additional detail or if `--no-parse` was used, you can run:
 
 ```bash
-docker exec $CONTAINER_ID bash -c "
-  $ENV_SCRIPT
-  cd $PXF_SRC/cli
-  make test
-"
+"$PXF_REPO/dev/parse-results.sh"
 ```
 
-If `--test` is provided, run a specific test:
-```bash
-docker exec $CONTAINER_ID bash -c "
-  $ENV_SCRIPT
-  cd $PXF_SRC/cli
-  go test ./... -run '<TestName>'
-"
-```
-
-#### Type: `fdw`
-
-Requires Greenplum to be running inside the container.
-
-```bash
-docker exec $CONTAINER_ID bash -c "
-  source /workspace/dist/database/greenplum_path.sh
-  $ENV_SCRIPT
-  cd $FDW_DIR
-  make installcheck
-"
-```
-
-If the test fails, show the diff from `regression.diffs` if it exists:
-```bash
-docker exec $CONTAINER_ID bash -c "
-  if [ -f '$FDW_DIR/regression.diffs' ]; then
-    cat '$FDW_DIR/regression.diffs'
-  fi
-"
-```
-
-#### Type: `integration`
-
-Integration tests require:
-- PXF service running (`pxf status`)
-- Greenplum database running
-- External data sources configured (HDFS, Hive, S3, etc.)
-
-Pre-flight checks:
-```bash
-docker exec $CONTAINER_ID bash -c "
-  $ENV_SCRIPT
-  pxf status
-  psql -d postgres -c 'SELECT 1;'
-"
-```
-
-If PXF is not running or GPDB is unreachable, tell the user:
-
-> Integration tests require both PXF and Greenplum to be running. Run `/pxf:setup` first.
-
-Run integration tests:
-```bash
-docker exec $CONTAINER_ID bash -c "
-  $ENV_SCRIPT
-  cd $PXF_SRC/automation
-  make GROUP=<group> TEST=<TestName> PROTOCOL=<protocol>
-"
-```
-
-Omit `GROUP=`, `TEST=`, or `PROTOCOL=` if the corresponding option was not provided.
-
-If no options are provided, run all integration tests:
-```bash
-docker exec $CONTAINER_ID bash -c "
-  $ENV_SCRIPT
-  cd $PXF_SRC/automation
-  make
-"
-```
-
-#### Type: `all`
-
-Run sequentially: `unit` then `fdw` then `integration`. Continue to the next type even if the previous one has failures. Collect results from all types.
-
-### Step 4: Output Results Summary
-
-After all tests complete, display a summary:
+Present the results clearly:
 
 ```
-## PXF Test Results
+## Test Results: <GROUP>
 
-Container: <CONTAINER_NAME> (<CONTAINER_ID>)
-Test Type: <type>
+Total: 42  |  Passed: 40  |  Failed: 2  |  Skipped: 0
 
-### Results
-| Component    | Tests | Passed | Failed | Skipped | Status  |
-|-------------|-------|--------|--------|---------|---------|
-| Server Unit | 142   | 140    | 2      | 0       | FAILED  |
-| CLI Unit    | 38    | 38     | 0      | 0       | PASSED  |
-| FDW         | 12    | 12     | 0      | 0       | PASSED  |
-| Integration | —     | —      | —      | —       | SKIPPED |
-
-### Failures (if any)
-- Server: TestClassName.testMethod — assertion error at line 45
-- ...
-
-Overall: FAILED (2 failures)
+### Failures
+- org.example.FooTest#testBar — expected 42 but got 0
+- org.example.BazTest#testQux — NullPointerException at line 99
 ```
 
-Parse the test output to extract counts where possible. If exact counts cannot be parsed, report the exit code and show relevant error output.
+### Step 5: On Failure, Offer Next Steps
+
+If tests failed:
+1. Show the failure details from surefire reports
+2. Offer to read the relevant test source code
+3. Offer to check PXF logs: `docker exec pxf-cbdb-dev cat /home/gpadmin/pxf-base/logs/pxf-service.log`
+4. Suggest re-running a specific test: `/pxf:test <group> TEST=FailedTestClass#failedMethod`
 
 ### Important Notes
 
-- All commands execute inside the detected Cloudberry dev container via `docker exec`
-- Unit tests can run without a running database
-- FDW tests require a running Greenplum instance
-- Integration tests require both PXF and Greenplum running, plus configured external data sources
-- When `--type all` is used, failures in one type do not block subsequent types
-- For integration test failures, check `$PXF_SRC/automation/target/surefire-reports/` for detailed reports
-- Show the most relevant failure output directly; do not dump entire logs unless the user requests it
+- All tests run inside the `pxf-cbdb-dev` container
+- Automation tests require the full environment (Cloudberry + PXF + Hadoop stack)
+- Server unit tests (`server` group) can run without the full stack
+- Test reports are saved to `automation/test_artifacts/<group>/`
+- Surefire XML reports are at `automation/target/surefire-reports/`
+- The `run_tests.sh` script handles group-specific setup (e.g., Hive cleanup before hive tests, MinIO setup before s3 tests)
+
+### Examples
+
+```bash
+# Run smoke tests (default)
+/pxf:test
+
+# Run HDFS tests
+/pxf:test hdfs
+
+# Run a specific test class
+/pxf:test smoke TEST=HdfsSmokeTest
+
+# Run a specific test method
+/pxf:test hdfs TEST=HdfsReadableTextTest#testTextFormatSimple
+
+# Run server unit tests
+/pxf:test server
+```

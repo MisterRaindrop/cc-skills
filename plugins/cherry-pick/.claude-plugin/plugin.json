@@ -10,9 +10,5 @@
         "./commands/plan.md",
         "./commands/batch.md",
         "./commands/review.md"
-    ],
-    "skills": [
-        "./skills/cherry-pick-engine/",
-        "./skills/cherry-pick-review/"
     ]
 }

@@ -1,13 +1,15 @@
 {
     "name": "pxf",
-    "description": "PXF development automation: environment setup, build (server/cli/fdw), and test runner for Cloudberry PXF.",
-    "version": "1.0.0",
+    "description": "PXF development automation for Cloudberry PXF: Docker environment management, build, test, and result parsing via pxf-cbdb-dev container.",
+    "version": "2.0.0",
     "author": {
         "name": "MisterRaindrop"
     },
     "commands": [
-        "./commands/setup.md",
+        "./commands/docker-up.md",
+        "./commands/docker-down.md",
+        "./commands/build.md",
         "./commands/test.md",
-        "./commands/build.md"
+        "./commands/parse-results.md"
     ]
 }

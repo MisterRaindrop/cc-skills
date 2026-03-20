@@ -29,8 +29,8 @@
         {
             "name": "pxf",
             "source": "./plugins/pxf",
-            "description": "PXF development automation: environment setup, build (server/cli/fdw), and test runner for Cloudberry PXF.",
-            "version": "1.0.0"
+            "description": "PXF development automation: Docker environment management, build, test, and result parsing for Cloudberry PXF via pxf-cbdb-dev container.",
+            "version": "2.0.0"
         },
         {
             "name": "singlecluster",

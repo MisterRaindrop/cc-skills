@@ -2,16 +2,13 @@
     "name": "code-review",
     "description": "Multi-agent adversarial code review with dual-team architecture (Claude Team Alpha + Codex Team Beta), multi-round discussion, and severity-based issue tracking.",
     "version": "1.0.0",
-    "author": "MisterRaindrop",
+    "author": {
+        "name": "MisterRaindrop"
+    },
     "commands": [
-        "commands/review.md",
-        "commands/review-commit.md",
-        "commands/review-branch.md",
-        "commands/review-config.md"
-    ],
-    "skills": [
-        "skills/code-review-trigger/SKILL.md",
-        "skills/review-engine/SKILL.md",
-        "skills/review-perspectives/SKILL.md"
+        "./commands/review.md",
+        "./commands/review-commit.md",
+        "./commands/review-branch.md",
+        "./commands/review-config.md"
     ]
 }
