@@ -22,7 +22,6 @@ Options:
   --debug        Debug build with assertions (default)
   --release      Release build (optimized, no assertions)
   --jobs N       Parallel build jobs (default: auto-detect inside container)
-  --verbose      Stream build output to stdout instead of log file
   -h, --help     Show this help
 EOF
     exit 0
@@ -45,7 +44,6 @@ CLEAN=false
 COVERAGE=false
 BUILD_TYPE="debug"
 JOBS=""
-USE_LOG=true
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -54,21 +52,10 @@ while [[ $# -gt 0 ]]; do
         --debug) BUILD_TYPE="debug"; shift ;;
         --release) BUILD_TYPE="release"; shift ;;
         --jobs) JOBS="$2"; shift 2 ;;
-        --verbose) USE_LOG=false; shift ;;
         -h|--help) usage ;;
         *) die "Unknown option: $1. Run '$0 --help' for usage." ;;
     esac
 done
-
-# --- Log file setup ---
-if [ "$USE_LOG" = "true" ]; then
-    LOG_DIR="${UMBRELLA_ROOT}/logs"
-    mkdir -p "$LOG_DIR"
-    COVERAGE_SUFFIX=""
-    [ "$COVERAGE" = "true" ] && COVERAGE_SUFFIX="-coverage"
-    LOG_FILE="${LOG_DIR}/build-database-${BUILD_TYPE}${COVERAGE_SUFFIX}-$(date '+%Y%m%d-%H%M%S').log"
-    log "Build output -> $LOG_FILE"
-fi
 
 # --- Docker exec wrapper ---
 dexec() {
@@ -87,7 +74,7 @@ THIRDPARTY_DIR="/workspace/dist/thirdparty-${INSTANCE_NAME}"
 log "Build type: ${BUILD_TYPE} | Coverage: ${COVERAGE} | Clean: ${CLEAN} | Jobs: ${JOBS}"
 
 # --- Build ---
-BUILD_CMD="
+dexec "
 set -e
 
 export PATH=/usr/local/toolchain/bin:/usr/local/python/bin:/usr/local/perl/bin:\$PATH
@@ -126,6 +113,7 @@ if [ '${COVERAGE}' = 'true' ]; then
     ./configure \${CONFIGURE_OPTS} \
         --with-perl --with-python --with-libxml --with-gssapi \
         --enable-mapreduce --enable-orafce --enable-tap-tests \
+        --with-thirdparty='${THIRDPARTY_DIR}' \
         --prefix='${INSTALL_DIR}' \
         CFLAGS='-O0 -g3' CXXFLAGS='-O0 -g3'
 else
@@ -134,7 +122,14 @@ fi
 
 # Step 4: Build and install
 echo '=== Building with ${JOBS} jobs ==='
-make -j${JOBS}
+BUILD_LOG=/tmp/database-build-\$\$.log
+if ! make -j${JOBS} 2>&1 | tee \${BUILD_LOG}; then
+    echo ''
+    echo '=== BUILD FAILED - Error summary ==='
+    grep -E '(: error:|undefined reference|fatal error:|make\\[.*\\]: \\*\\*\\*)' \${BUILD_LOG} | tail -30
+    echo '=== Full log: '\${BUILD_LOG}' ==='
+    exit 2
+fi
 make install
 
 echo ''
@@ -146,31 +141,42 @@ if [ '${COVERAGE}' = 'true' ]; then
 fi
 "
 
-set +e
-if [ "$USE_LOG" = "true" ]; then
-    dexec "$BUILD_CMD" > "$LOG_FILE" 2>&1
-else
-    dexec "$BUILD_CMD"
-fi
-BUILD_RC=$?
-set -e
+# --- Restart cluster if deployed ---
+DEPLOY_DIR="/workspace/deploy/${INSTANCE_NAME}"
+CLUSTER_EXISTS=$(dexec "test -f '${DEPLOY_DIR}/.port' && echo yes || echo no")
 
-# --- Summary ---
-if [ $BUILD_RC -eq 0 ]; then
-    log "BUILD SUCCESS"
-    log "Instance:   ${INSTANCE_NAME}"
-    log "Build type: ${BUILD_TYPE}"
-    log "Coverage:   ${COVERAGE}"
-    log "Install:    ${INSTALL_DIR}"
-    [ "$USE_LOG" = "true" ] && log "Log file:   ${LOG_FILE}"
-else
-    log "BUILD FAILED (exit code: ${BUILD_RC})"
-    if [ "$USE_LOG" = "true" ]; then
-        log "Last 30 lines of build log:"
-        echo "---"
-        tail -30 "$LOG_FILE"
-        echo "---"
-        log "Full log: ${LOG_FILE}"
+if [ "$CLUSTER_EXISTS" = "yes" ]; then
+    PORT=$(dexec "cat '${DEPLOY_DIR}/.port'")
+    log "Restarting cluster (PGPORT=${PORT})..."
+    dexec "
+set -e
+export PATH=/usr/local/toolchain/bin:/usr/local/python/bin:/usr/local/perl/bin:\$PATH
+export LD_LIBRARY_PATH=/usr/local/toolchain/lib64:/usr/local/python/lib:\${LD_LIBRARY_PATH:-}
+source '${INSTALL_DIR}/greenplum_path.sh'
+export COORDINATOR_DATA_DIRECTORY='${DEPLOY_DIR}/datadirs/qddir/demoDataDir-1'
+export MASTER_DATA_DIRECTORY=\$COORDINATOR_DATA_DIRECTORY
+export PGPORT=${PORT}
+
+gpstop -ari 2>&1 || true
+gpstart -a 2>&1
+" || {
+        log "WARNING: Cluster restart failed. You may need to restart manually."
+    }
+
+    # Verify cluster is healthy
+    log "Verifying cluster health..."
+    if dexec "
+source '${INSTALL_DIR}/greenplum_path.sh'
+export PGPORT=${PORT}
+export COORDINATOR_DATA_DIRECTORY='${DEPLOY_DIR}/datadirs/qddir/demoDataDir-1'
+psql -d template1 -t -c 'SELECT count(*) FROM gp_segment_configuration WHERE status = \\\"u\\\"' 2>/dev/null
+"; then
+        log "Cluster restarted and verified successfully."
+    else
+        log "WARNING: Cluster restart verification failed. Check cluster status manually."
     fi
-    exit $BUILD_RC
+else
+    log "No deployed cluster found. Skipping restart."
 fi
+
+log "Database build complete: ${INSTANCE_NAME}"

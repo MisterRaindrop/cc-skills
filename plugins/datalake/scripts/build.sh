@@ -27,7 +27,6 @@ Targets:
 Options:
   --coverage   Build datalake components with coverage flags (database must already be configured with --enable-coverage via build_database)
   --jobs N     Parallel build jobs (default: auto-detect inside container)
-  --verbose    Stream build output to stdout instead of log file
   -h, --help   Show this help
 EOF
     exit 0
@@ -56,41 +55,27 @@ fi
 
 COVERAGE=false
 JOBS=""
-USE_LOG=true
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --coverage) COVERAGE=true; shift ;;
         --jobs) JOBS="$2"; shift 2 ;;
-        --verbose) USE_LOG=false; shift ;;
         -h|--help) usage ;;
         *) die "Unknown option: $1. Run '$0 --help' for usage." ;;
     esac
 done
 
 # --- Docker exec wrapper ---
+# Ensure toolchain GCC and greenplum_path.sh are in PATH for all builds
+DIST_DIR="/workspace/dist/${INSTANCE_NAME}"
+DEXEC_ENV="export PATH=/usr/local/toolchain/bin:/usr/local/python/bin:/usr/local/perl/bin:\$PATH; export LD_LIBRARY_PATH=/usr/local/toolchain/lib64:/usr/local/python/lib:\${LD_LIBRARY_PATH:-}; source ${DIST_DIR}/greenplum_path.sh;"
 dexec() {
-    if [ "${USE_LOG:-false}" = "true" ] && [ -n "${LOG_FILE:-}" ]; then
-        docker exec -u gpadmin "$CONTAINER_NAME" bash -c "$*" >> "$LOG_FILE" 2>&1
-    else
-        docker exec -u gpadmin "$CONTAINER_NAME" bash -c "$*"
-    fi
+    docker exec -u gpadmin "$CONTAINER_NAME" bash -c "${DEXEC_ENV} $*"
 }
-
-# --- Log file setup ---
-if [ "$USE_LOG" = "true" ]; then
-    LOG_DIR="${UMBRELLA_ROOT}/logs"
-    mkdir -p "$LOG_DIR"
-    COVERAGE_SUFFIX=""
-    [ "$COVERAGE" = "true" ] && COVERAGE_SUFFIX="-coverage"
-    LOG_FILE="${LOG_DIR}/build-${TARGET}${COVERAGE_SUFFIX}-$(date '+%Y%m%d-%H%M%S').log"
-    log "Build output -> $LOG_FILE"
-fi
 
 # --- Determine parallel jobs ---
 if [ -z "$JOBS" ]; then
-    # nproc detection must not go to log file
-    JOBS=$(docker exec -u gpadmin "$CONTAINER_NAME" bash -c "nproc 2>/dev/null || echo 4")
+    JOBS=$(dexec "nproc 2>/dev/null || echo 4")
 fi
 
 # --- Component paths inside container ---
@@ -120,8 +105,7 @@ build_fdw() {
 check_coverage_configured() {
     log "Checking coverage configuration..."
     local has_coverage
-    # Always check to stdout, not log file
-    has_coverage=$(docker exec -u gpadmin "$CONTAINER_NAME" bash -c "grep -c 'enable_coverage.*yes' ${DOCKER_DB_PATH}/src/Makefile.global 2>/dev/null || echo 0")
+    has_coverage=$(dexec "grep -c 'enable_coverage.*yes' ${DOCKER_DB_PATH}/src/Makefile.global 2>/dev/null || echo 0")
 
     if [ "$has_coverage" = "0" ]; then
         die "Database not configured with --enable-coverage. Run 'build-database.sh --coverage' first."
@@ -131,15 +115,15 @@ check_coverage_configured() {
 
 do_clean() {
     log "Cleaning all components..."
-    docker exec -u gpadmin "$CONTAINER_NAME" bash -c "cd ${AGENT_DIR} && make clean 2>/dev/null || true"
-    docker exec -u gpadmin "$CONTAINER_NAME" bash -c "cd ${PROXY_DIR} && make clean 2>/dev/null || true"
-    docker exec -u gpadmin "$CONTAINER_NAME" bash -c "cd ${FDW_DIR} && make clean 2>/dev/null || true"
+    dexec "cd ${AGENT_DIR} && make clean 2>/dev/null || true"
+    dexec "cd ${PROXY_DIR} && make clean 2>/dev/null || true"
+    dexec "cd ${FDW_DIR} && make clean 2>/dev/null || true"
     log "Clean complete."
 }
 
 do_status() {
     log "Build status:"
-    docker exec -u gpadmin "$CONTAINER_NAME" bash -c "
+    dexec "
 echo '=== Component Binaries ==='
 echo 'datalake_fdw.so:'
 ls -la \$(pg_config --pkglibdir)/datalake_fdw.so 2>/dev/null || echo '  NOT FOUND'
@@ -167,10 +151,11 @@ if [ "$COVERAGE" = true ] && [ "$TARGET" != "clean" ] && [ "$TARGET" != "status"
     check_coverage_configured
 fi
 
-set +e
 case "$TARGET" in
     all)
-        build_agent && build_proxy && build_fdw
+        build_agent
+        build_proxy
+        build_fdw
         ;;
     fdw)    build_fdw ;;
     agent)  build_agent ;;
@@ -179,32 +164,49 @@ case "$TARGET" in
     status) do_status ;;
     *)      die "Unknown target: ${TARGET}. Run '$0 --help' for usage." ;;
 esac
-BUILD_RC=$?
-set -e
 
 if [ "$TARGET" != "status" ] && [ "$TARGET" != "clean" ]; then
-    if [ $BUILD_RC -eq 0 ]; then
-        if [ "$COVERAGE" = true ]; then
-            log "Verifying coverage instrumentation..."
-            dexec "
+    if [ "$COVERAGE" = true ]; then
+        log "Verifying coverage instrumentation..."
+        dexec "
 GCNO=\$(find ${FDW_DIR}/src -name '*.gcno' | wc -l)
 echo \"Coverage: \${GCNO} .gcno files generated\"
 "
-        fi
-        log "BUILD SUCCESS"
-        log "Target:    ${TARGET}"
-        log "Instance:  ${INSTANCE_NAME}"
-        log "Coverage:  ${COVERAGE}"
-        [ "$USE_LOG" = "true" ] && log "Log file:  ${LOG_FILE}"
-    else
-        log "BUILD FAILED (exit code: ${BUILD_RC})"
-        if [ "$USE_LOG" = "true" ]; then
-            log "Last 30 lines of build log:"
-            echo "---"
-            tail -30 "$LOG_FILE"
-            echo "---"
-            log "Full log: ${LOG_FILE}"
-        fi
-        exit $BUILD_RC
     fi
+
+    # --- Restart cluster if deployed ---
+    DEPLOY_DIR="/workspace/deploy/${INSTANCE_NAME}"
+    CLUSTER_EXISTS=$(dexec "test -f '${DEPLOY_DIR}/.port' && echo yes || echo no")
+
+    if [ "$CLUSTER_EXISTS" = "yes" ]; then
+        PORT=$(dexec "cat '${DEPLOY_DIR}/.port'")
+        log "Restarting cluster (PGPORT=${PORT})..."
+        dexec "
+set -e
+export COORDINATOR_DATA_DIRECTORY='${DEPLOY_DIR}/datadirs/qddir/demoDataDir-1'
+export MASTER_DATA_DIRECTORY=\$COORDINATOR_DATA_DIRECTORY
+export PGPORT=${PORT}
+
+gpstop -ari 2>&1 || true
+gpstart -a 2>&1
+" || {
+            log "WARNING: Cluster restart failed. You may need to restart manually."
+        }
+
+        # Verify cluster is healthy
+        log "Verifying cluster health..."
+        if dexec "
+export PGPORT=${PORT}
+export COORDINATOR_DATA_DIRECTORY='${DEPLOY_DIR}/datadirs/qddir/demoDataDir-1'
+psql -d template1 -t -c 'SELECT count(*) FROM gp_segment_configuration WHERE status = \\\"u\\\"' 2>/dev/null
+"; then
+            log "Cluster restarted and verified successfully."
+        else
+            log "WARNING: Cluster restart verification failed. Check cluster status manually."
+        fi
+    else
+        log "No deployed cluster found. Skipping restart."
+    fi
+
+    log "Build complete: ${TARGET}"
 fi
