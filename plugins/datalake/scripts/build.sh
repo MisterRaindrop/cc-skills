@@ -209,4 +209,13 @@ psql -d template1 -t -c 'SELECT count(*) FROM gp_segment_configuration WHERE sta
     fi
 
     log "Build complete: ${TARGET}"
+
+    if [ "$CLUSTER_EXISTS" = "yes" ]; then
+        echo ""
+        echo "To connect:"
+        echo "  docker exec -u gpadmin -it ${CONTAINER_NAME} bash"
+        echo "  source ${DIST_DIR}/greenplum_path.sh"
+        echo "  source ${DEPLOY_DIR}/gpdemo-env.sh"
+        echo "  psql -d template1"
+    fi
 fi
