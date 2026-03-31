@@ -157,7 +157,7 @@ export COORDINATOR_DATA_DIRECTORY='${DEPLOY_DIR}/datadirs/qddir/demoDataDir-1'
 export MASTER_DATA_DIRECTORY=\$COORDINATOR_DATA_DIRECTORY
 export PGPORT=${PORT}
 
-gpstop -ari 2>&1 || true
+gpstop -ai 2>&1 || true
 gpstart -a 2>&1
 " || {
         log "WARNING: Cluster restart failed. You may need to restart manually."
