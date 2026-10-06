@@ -51,6 +51,17 @@ PXF development automation for Cloudberry PXF. Docker environment, build, test, 
 
 **Requires**: Docker, [cloudberry-pxf](https://github.com/apache/cloudberry-pxf) repo with `dev/` scripts. See [pxf plugin README](plugins/pxf/README.md) for details.
 
+### finish-mr
+
+Owns one exact GitLab merge request from finished implementation until it is merged, closed,
+merge-ready, or genuinely blocked. Creating the MR or pushing once is not completion.
+
+| Skill | What it does |
+|-------|-------------|
+| `finish-mr` | Keeps the commit and MR text as one canonical message, verifies each review suggestion before acting, retries a flaky CI job at most once, rebases with `--force-with-lease`, re-verifies every new HEAD, and ends with `FINISH_READY` / `FINISH_WAITING` / `FINISH_MERGED` / `FINISH_CLOSED` / `FINISH_BLOCKED`. It never merges the MR itself. |
+
+**GitLab only.** It is invoked by the model when you ask it to finish an MR, not as a slash command.
+
 ---
 
 ## Installation

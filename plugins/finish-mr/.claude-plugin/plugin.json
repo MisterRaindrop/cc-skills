@@ -1,0 +1,8 @@
+{
+    "name": "finish-mr",
+    "description": "Finish an implemented GitLab merge request: normalize commit and MR text, handle review feedback, repair or retry CI, rebase conflicts, and follow the exact MR until it is merge-ready, merged, closed, or blocked.",
+    "version": "1.0.0",
+    "author": {
+        "name": "MisterRaindrop"
+    }
+}

@@ -55,6 +55,12 @@
             "source": "./plugins/datalake",
             "description": "Datalake FDW development automation: build, test, coverage collection, and singlecluster Docker environment management.",
             "version": "1.0.0"
+        },
+        {
+            "name": "finish-mr",
+            "source": "./plugins/finish-mr",
+            "description": "Finish an implemented GitLab merge request through a merge-ready or merged state: one canonical change message, verified review handling, bounded CI retries, rebase, and a terminal status.",
+            "version": "1.0.0"
         }
     ]
 }
