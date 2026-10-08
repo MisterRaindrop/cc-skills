@@ -58,7 +58,7 @@ merge-ready, or genuinely blocked. Creating the MR or pushing once is not comple
 
 | Skill | What it does |
 |-------|-------------|
-| `finish-mr` | Keeps the commit and MR text as one canonical message, verifies each review suggestion before acting, retries a flaky CI job at most once, rebases with `--force-with-lease`, re-verifies every new HEAD, and ends with `FINISH_READY` / `FINISH_WAITING` / `FINISH_MERGED` / `FINISH_CLOSED` / `FINISH_BLOCKED`. It never merges the MR itself. |
+| `finish-mr` | Writes the MR title and description as the final squash commit message, checks every commit message, the changed lines' code style and the license headers against Apache project conventions (50/72 commit format, ASF header, no incompatible licenses), verifies each review suggestion before acting, retries a flaky CI job at most once, rebases with `--force-with-lease`, re-verifies every new HEAD, and ends with `FINISH_READY` / `FINISH_WAITING` / `FINISH_MERGED` / `FINISH_CLOSED` / `FINISH_BLOCKED`. It never merges the MR itself. |
 
 **GitLab only.** It is invoked by the model when you ask it to finish an MR, not as a slash command.
 
