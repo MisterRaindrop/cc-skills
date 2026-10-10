@@ -60,7 +60,7 @@
             "name": "finish-mr",
             "source": "./plugins/finish-mr",
             "description": "Finish an implemented GitLab merge request: the MR written as the final squash commit message, commits, code style and license headers checked against Apache conventions, verified review handling, bounded CI retries, rebase, and a terminal status.",
-            "version": "1.3.0"
+            "version": "1.3.1"
         }
     ]
 }

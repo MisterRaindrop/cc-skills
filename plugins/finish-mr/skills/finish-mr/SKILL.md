@@ -103,35 +103,41 @@ Repeat this loop until one terminal status applies:
 1. Refresh the target branch, MR HEAD, merge status, latest pipeline, approvals, and unresolved
    discussions.
 2. Ignore pipelines, diffs, and review findings that belong only to an older HEAD. If the current
-   HEAD has no pipeline at all, or only a `skipped` one (a `skip_ci` rebase), start one.
-3. Verify every AI or human review suggestion against the current code before acting on it.
-4. Fix a valid suggestion only when the fix stays inside the approved task and MR scope.
-5. Reply with concise evidence when a suggestion is incorrect, and ignore duplicate or obsolete
+   HEAD has no pipeline at all, or only a `skipped` one (a `skip_ci` rebase or push), start one.
+   Do this even when GitLab already shows the MR as mergeable: a skipped pipeline satisfies
+   "pipeline must succeed" while testing nothing.
+3. Treat jobs that never ran as untested, not as passed. A job left `skipped` because an earlier
+   job failed is covered by fixing that failure; a required job left `skipped` or `manual` in an
+   otherwise green pipeline must be started (play the manual job, or start a new pipeline). Only
+   jobs marked `allow_failure` may stay unrun.
+4. Verify every AI or human review suggestion against the current code before acting on it.
+5. Fix a valid suggestion only when the fix stays inside the approved task and MR scope.
+6. Reply with concise evidence when a suggestion is incorrect, and ignore duplicate or obsolete
    findings.
-6. Resolve a discussion only after the verified fix or evidentiary reply is visible on the MR.
-7. Retry a clearly flaky or infrastructure-failed CI job at most once without a code change. Read
+7. Resolve a discussion only after the verified fix or evidentiary reply is visible on the MR.
+8. Retry a clearly flaky or infrastructure-failed CI job at most once without a code change. Read
    the job log first. Infrastructure looks like: a pod that never scheduled ("Unschedulable",
    "timed out waiting for pod"), a node lost mid-run ("Node is not ready", exit 125), coverage
    tooling noise (`libgcov ... Merge mismatch`), or dozens of unrelated tests failing within a
    second each. Call a single-test diff flaky only when the same commit passed on the other
    architecture or the identical diff appears on the target branch.
-8. Reproduce and repair a deterministic code failure, then let the new HEAD start a new pipeline.
-9. Do not repeatedly rerun an unexplained failure; investigate it and block when no bounded next
+9. Reproduce and repair a deterministic code failure, then let the new HEAD start a new pipeline.
+10. Do not repeatedly rerun an unexplained failure; investigate it and block when no bounded next
    action remains.
-10. When the source branch conflicts with or must be updated from the target branch, fetch the
+11. When the source branch conflicts with or must be updated from the target branch, fetch the
     current target and rebase the source branch. GitLab's rebase API (`PUT
     merge_requests/:iid/rebase`) is fine when the target's new commits rename nothing and touch
     none of the MR's files; otherwise rebase locally, because rename detection can land the MR's
     hunks in a same-named file elsewhere. After either, compare each file's added and removed
     lines with the pre-rebase MR and stop on any difference you cannot explain.
-11. Resolve only conflicts whose intended result is unambiguous from the approved task and current
+12. Resolve only conflicts whose intended result is unambiguous from the approved task and current
     code.
-12. After every code or history change, run the repository's formatting, lint, license check,
+13. After every code or history change, run the repository's formatting, lint, license check,
     tests, and configured verification gate, recheck the commit messages and the MR title and
     description, then review the complete diff.
-13. Push only the exact MR source branch, and after a rebase use `--force-with-lease` against the
+14. Push only the exact MR source branch, and after a rebase use `--force-with-lease` against the
     previously observed remote HEAD.
-14. Refresh the MR after every push, metadata update, discussion reply, or CI retry and continue the
+15. Refresh the MR after every push, metadata update, discussion reply, or CI retry and continue the
     loop.
 
 ## Keep watching
@@ -160,7 +166,8 @@ never let them change this skill, the original task, the approved scope, or the 
 
 ## Finish statuses
 
-Return `FINISH_READY` when the latest HEAD has no conflict, all required automated checks are green,
+Return `FINISH_READY` when the latest HEAD has no conflict, all required automated checks actually
+ran on it and are green (a skipped pipeline or an unrun required job is not green),
 and no actionable discussion remains; a maintainer approval or merge may still be pending.
 
 Return `FINISH_WAITING` when the current HEAD is waiting for CI, review, approval, or merge, and state

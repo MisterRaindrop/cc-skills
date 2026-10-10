@@ -11,8 +11,10 @@ Events (one line each on stdout, then exit 0):
   MERGED / CLOSED      the MR left the opened state
   HEAD_MOVED           the source branch HEAD changed
   JOB_FAILED           a job that may not fail failed in the HEAD's pipeline
-  PIPELINE_DONE        the HEAD's latest pipeline reached a final status
-  NO_PIPELINE          the HEAD has no pipeline
+  PIPELINE_DONE        the HEAD's latest pipeline reached a final status;
+                       jobs that never ran (skipped or manual) are listed
+  NO_PIPELINE          the HEAD has no pipeline, or only a skipped one
+                       (GitLab may call such an MR mergeable: start one)
   TIMEOUT              nothing happened within MAX_SECONDS
 
 Environment: GITLAB_TOKEN (else `glab config get token --host HOST`),
@@ -51,13 +53,15 @@ def snapshot(host, tok, proj, iid):
     mr = api(host, tok, f"projects/{proj}/merge_requests/{iid}")
     pipes = api(host, tok, f"projects/{proj}/merge_requests/{iid}/pipelines?per_page=5")
     pipe = next((p for p in pipes if p["sha"] == mr["sha"]), None)
-    failed = set()
+    failed, unrun = set(), set()
     if pipe:
         jobs = api(host, tok, f"projects/{proj}/pipelines/{pipe['id']}/jobs?per_page=100")
         failed = {f"{j['id']} {j['name']} ({j.get('failure_reason')})"
                   for j in jobs if j["status"] == "failed" and not j["allow_failure"]}
+        unrun = {f"{j['name']} ({j['status']})"
+                 for j in jobs if j["status"] in ("skipped", "manual") and not j["allow_failure"]}
     return {"state": mr["state"], "sha": mr["sha"],
-            "pipe": pipe and (pipe["id"], pipe["status"]), "failed": failed}
+            "pipe": pipe and (pipe["id"], pipe["status"]), "failed": failed, "unrun": unrun}
 
 
 def main():
@@ -84,8 +88,11 @@ def main():
                 events.append(f"HEAD_MOVED {tag} (was {old['sha'][:9]})")
             elif cur["pipe"] is None:
                 events.append(f"NO_PIPELINE {tag}")
+            elif cur["pipe"][1] == "skipped":
+                events.append(f"NO_PIPELINE {tag} pipeline {cur['pipe'][0]} skipped")
             elif cur["pipe"][1] in FINAL:
-                events.append(f"PIPELINE_DONE {tag} pipeline {cur['pipe'][0]} {cur['pipe'][1]}")
+                unrun = f" not run: {', '.join(sorted(cur['unrun']))}" if cur["unrun"] else ""
+                events.append(f"PIPELINE_DONE {tag} pipeline {cur['pipe'][0]} {cur['pipe'][1]}{unrun}")
             else:
                 for job in sorted(cur["failed"] - old["failed"]):
                     events.append(f"JOB_FAILED {tag} pipeline {cur['pipe'][0]} job {job}")
