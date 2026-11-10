@@ -12,7 +12,8 @@
 #   flame.sh memattr  <pid> <sec> [out] [nqe]
 #                                         page faults (1 sample / FAULT_PERIOD=16 pages)
 #                                         + RssAnon before/after, then opattr.py: share and
-#                                         MB per operator and function (x nqe for the slice).
+#                                         MB per operator and function (x nqe for the slice),
+#                                         plus each operator's call tree down to the leaf.
 #                                         Run ONLY while the QE's memory grows.
 #   flame.sh topdown  <pid> <sec> [groups=TopDownL1]
 #                                         perf stat metric groups in ONE window; lists the
@@ -74,7 +75,7 @@ case $MODE in
     echo "pid=$PID t0=$T sec=$SEC RssAnon ${A}kB -> ${B}kB delta=${D}MB AnonHugePages delta=${DH}MB" | tee "$OUT.window"
     $P script -i "$TMP/perf.data" > "$OUT.perfscript" 2>/dev/null
     python3 "$(dirname "$0")/opattr.py" "$OUT.perfscript" "$D" --thp-mb "$DH" \
-      --period "${FAULT_PERIOD:-16}" --qe "$NQE" | tee "$OUT.opattr.txt"
+      --period "${FAULT_PERIOD:-16}" --qe "$NQE" --tree | tee "$OUT.opattr.txt"
     ;;
   offcpu)
     PID=$1; SEC=$2; OUT=${3:-./offcpu_$1}; alive "$PID"

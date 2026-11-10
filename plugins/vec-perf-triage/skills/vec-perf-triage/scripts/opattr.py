@@ -2,6 +2,7 @@
 """Attribute first-touch page faults of one QE to vec operators and functions.
 
   opattr.py <perf-script text> <delta_MB> [--thp-mb M] [--period 16] [--qe N] [--sites 4] [--min 0.5]
+            [--tree [--tree-min 0.3]]
 
 Input: `perf script` output of `perf record -e page-faults -c <period>
 --call-graph dwarf` taken on ONE QE during a window in which its memory grows
@@ -15,6 +16,11 @@ Input: `perf script` output of `perf record -e page-faults -c <period>
             much of the growth the shares actually describe.
   --period  pages per sample (the -c value), used for the coverage check.
   --min     hide operators below this share (percent).
+  --tree    per operator, the call tree from the operator's entry frame (the
+            root-most frame of that operator) down to the leaf (memset, memcpy,
+            allocator, decompressor ...), every node with its share of all
+            samples and MB/QE (GiB x qe); single-child chains are joined with
+            " > "; nodes below --tree-min percent are folded into "(other)".
   --qe N    number of QEs of the slice; prints a "x N" column.  Only meaningful
             when the slice is not skewed (sampler skew < ~1.1).
 
@@ -69,6 +75,69 @@ def stacks(path):
         yield cur
 
 
+def short(f):
+    """Readable frame name: drop argument lists and template arguments."""
+    f = re.sub(r"\[clone [^\]]*\]", "", f)
+    out, depth = [], 0
+    for ch in f:
+        if ch in "<(":
+            if depth == 0:
+                out.append("<>" if ch == "<" else "()")
+            depth += 1
+        elif ch in ">)":
+            depth = max(0, depth - 1)
+        elif depth == 0:
+            out.append(ch)
+    r = "".join(out).replace("()", "").replace("<>", "").strip()
+    r = re.sub(r"^(arrow::compute::|arrow::)", "", r)
+    r = re.sub(r"\(anonymous namespace\)::", "", r)
+    r = r.replace("(anonymous namespace)::", "")
+    if r.startswith("operator") and "Visit" in f:      # lambda inside Visit<Foo(...)::lambda>
+        m = re.search(r"Visit<[^<(]*?([A-Za-z_]+)\(", f)
+        r = f"{m.group(1)}::lambda" if m else r
+    r = re.sub(r"(::)+", "::", r)
+    return (r or f[:60])[:90]
+
+
+def entry(st, i, op):
+    """Root-most frame of the same operator above the leaf-most match i."""
+    rx = dict(COMP)[op]
+    k = i
+    for j in range(i + 1, len(st)):
+        if rx.search(st[j]):
+            k = j
+        elif any(r.search(st[j]) for n, r in COMP if n != op):
+            break
+    return k
+
+
+def print_tree(node, n, delta, qe, tmin, indent, total_label=None):
+    kids = sorted(node["k"].items(), key=lambda kv: -kv[1]["c"])
+    shown = [(name, ch) for name, ch in kids if 100 * ch["c"] / n >= tmin]
+    other = node["c"] - node["self"] - sum(ch["c"] for _, ch in shown)
+    for name, ch in shown:
+        label = [name]
+        while len(ch["k"]) == 1 and ch["self"] == 0:       # join single-child chains
+            (nm, nx), = ch["k"].items()
+            if nx["c"] != ch["c"]:
+                break
+            label.append(nm)
+            ch = nx
+        pct = 100 * ch["c"] / n
+        mb = delta * ch["c"] / n
+        g = f" {mb * qe / 1024:6.1f}G" if qe else ""
+        print(f"{pct:6.1f}% {mb:6.0f}MB{g}  {indent}{' > '.join(label)}")
+        print_tree(ch, n, delta, qe, tmin, indent + "  ")
+    if node["self"] and 100 * node["self"] / n >= tmin and node["k"]:
+        mb = delta * node["self"] / n
+        g = f" {mb * qe / 1024:6.1f}G" if qe else ""
+        print(f"{100 * node['self'] / n:6.1f}% {mb:6.0f}MB{g}  {indent}(self)")
+    if other > 0 and 100 * other / n >= tmin / 2:
+        mb = delta * other / n
+        g = f" {mb * qe / 1024:6.1f}G" if qe else ""
+        print(f"{100 * other / n:6.1f}% {mb:6.0f}MB{g}  {indent}(other < {tmin}%)")
+
+
 def classify(st):
     for i, f in enumerate(st):
         for name, rx in COMP:
@@ -86,14 +155,28 @@ def main():
     ap.add_argument("--min", type=float, default=0.5)
     ap.add_argument("--qe", type=int, default=0)
     ap.add_argument("--sites", type=int, default=4)
+    ap.add_argument("--tree", action="store_true")
+    ap.add_argument("--tree-min", type=float, default=0.3)
     a = ap.parse_args()
 
     cnt, sites, unk = collections.Counter(), collections.defaultdict(collections.Counter), collections.Counter()
+    newnode = lambda: {"c": 0, "self": 0, "k": {}}
+    trees = collections.defaultdict(newnode)
     n = 0
     for st in stacks(a.perfscript):
         n += 1
         op, i = classify(st)
         cnt[op] += 1
+        if a.tree and op != "other/unknown":
+            node = trees[op]
+            node["c"] += 1
+            for f in reversed(st[:entry(st, i, op) + 1]):     # entry frame -> leaf
+                if f.startswith("[unknown]"):
+                    continue
+                name = short(f)
+                node = node["k"].setdefault(name, newnode())
+                node["c"] += 1
+            node["self"] += 1
         if op == "other/unknown":
             unk[" <- ".join(st[:4])[:160]] += 1
         else:
@@ -132,6 +215,15 @@ def main():
         print(f"  {100 * c / n:5.1f}%  {mb:7.0f}{col}  {op}")
         for s, k in sites[op].most_common(a.sites):
             print(f"  {'':>6}  {'':>7}{'  ' + ' ' * 8 if a.qe else ''}    {100 * k / n:5.1f}%  {s}")
+    if a.tree:
+        print("\n=== call trees: entry frame -> leaf; % of all samples, MB/QE" + (f", GiB x{a.qe}" if a.qe else ""))
+        for op, c in cnt.most_common():
+            if op == "other/unknown" or 100 * c / n < a.min:
+                continue
+            mb = a.delta_mb * c / n
+            g = f" {mb * a.qe / 1024:6.1f}G" if a.qe else ""
+            print(f"\n{100 * c / n:6.1f}% {mb:6.0f}MB{g}  [{op}]")
+            print_tree(trees[op], n, a.delta_mb, a.qe, a.tree_min, "  ")
     if hidden:
         print(f"  ({100 * hidden / n:.1f}% in operators below --min {a.min}% not shown)")
     if unk and 100 * cnt["other/unknown"] / n >= a.min:

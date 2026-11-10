@@ -81,6 +81,17 @@
 - **说明**：vmem 保护、`statement_mem`、资源组内存配额都基于 vmem 记账或算子内存预算，管不住不经过 vmem 的分配。并发数和 CPU 仍可以用资源组控制。机器级兜底只剩 cgroup 内存限制和 OOM killer。
 - **修复方向**：所有分配都经过可统计的池，池外部分（PAX 缓冲、Sink 队列）也要纳入统计；再接入 vmem 或查询级内存上限（`vector.report_memory_to_vmem`、`vector.query_memory_limit_mb`）。
 
+### M8. SonicHashAgg 目录不扩容，分散的分组被重复存储（候选）
+- **现象**：高基数 GROUP BY 的 slice 单 QE 内存顶到 `sonicagg_spill_memory_mb`，远大于"组数 ×（行宽 + 字符串 heap）"；memattr 显示几乎全部在 `AppendEmptyGroups`（`AddBlock` 的 memset 和 `ScatterColumn`）。
+- **类别**：C
+- **判定**（需要两条）：
+  1. 算术：用 EXPLAIN ANALYZE 的 HashAgg 输出行数（HAVING 之前）× 每组字节数（`row_layout.cc` 的行宽 + 超过 12B 的字符串）估算，实测是它的数倍；
+  2. 对照实验：同一输入、组数相近，只改分组在输入中的分散程度（例如按票据号，同一组的行相邻；或按 (item, date)，同一组的行分散）。只有分散型的内存上涨，就说明是重复存储。
+  - 直接证据：`LocalAggregator::groups_created_` 远大于最终组数（需要加日志输出）。
+- **机制**：`local_aggregator.cc` 中目录满 2/3 就 `Abandon()`，清空目录但保留所有行，不扩容，重复行到 finalize 才合并。目录固定为 `kDefaultHTCapacity`（1M 项）。
+- **适用条件**：每个 QE 的组数超过约 70 万，并且同一组的行在输入里分散。
+- **修复方向**：上一轮 abandon 后命中率低时把目录翻倍（设上限）；或者把 abandon 限制在 partial agg 场景，final agg 必须扩容。
+
 ---
 
 ## CPU / 耗时类
