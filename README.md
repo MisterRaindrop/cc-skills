@@ -62,6 +62,23 @@ merge-ready, or genuinely blocked. Creating the MR or pushing once is not comple
 
 **GitLab only.** It is invoked by the model when you ask it to finish an MR, not as a slash command.
 
+### vec-perf-triage
+
+Triage resource problems of queries on the HashData Lightning / Cloudberry **vectorized engine**:
+high memory, high CPU, slower than the row engine, hangs, OOM under concurrency. It walks a fixed
+order (safety tiers → problem statement → plan DAG → USE check → time series and critical path →
+skew / Motion / spill / thread pool → profiling → classification → quantification → report), attributes
+the cost to slices, operators and code, decides whether it is environment, data, parameter, plan,
+engine structure or a defect, and writes a report with a confidence level per conclusion.
+
+| Skill | What it does |
+|-------|-------------|
+| `vec-perf-triage` | Methodology (`SKILL.md`, in Chinese), a pattern library (`references/known-patterns.md`) and scripts: `sampler.py` (run one query, sample every QE per second: RssAnon/VmHWM, CPU, IO, threads, per-slice peak at the same instant, skew, busy windows), `ab.sh` (warm-up + ABBA A/B with result fingerprint and noise verdict), `stacks.sh` (repeated stack snapshots to prove a hang), `flame.sh` (cpu / off-CPU / page-fault / top-down / diff), `plot.py`, `qe_pids.py` (finds only this cluster's QEs). |
+
+Scripts run on the segment host as the database OS user, read-only SQL only, session-level options only;
+`stacks.sh` pauses processes (gdb) and some `flame.sh` modes need `SUDO=sudo`. Invoked by the model when you
+ask why a vectorized query uses too much memory or CPU, is slow, or hangs.
+
 ---
 
 ## Installation
