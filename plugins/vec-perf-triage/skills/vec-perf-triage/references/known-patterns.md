@@ -46,6 +46,16 @@
 
 - **修复方向**：第一种情况调参即可；后两种要修推模型（S1）或同步扫描（M1）。
 
+### M7. CTE 让整条查询进入 batch 模式，Sink 没有上限，产出方 slice 的输出全部积压（候选）
+- **现象**：带 CTE 的查询里，不含 Shared Scan 的产出方 slice（扫描、扫描 + join）内存在 Motion 开始发送之前一路上涨；memattr 把这些内存记在扫描解码或 join 输出头上；调小 `vector.backpressure_memory_mb` 没有任何效果。
+- **类别**：C
+- **判定**（需要两条）：
+  1. debug1 日志里该 slice 是 `share=1 -> batch mode, no backpressure`（VEC-YIELD-GUARD 按整条查询判断，任何地方有 CTE 就所有 slice 都命中）；
+  2. 该 slice 的内存量和"输出行数 × 每行字节数"一致，并且发送方 slice 的 busy 段里先上涨、后发送，没有边产边发；或者用原型让该 slice 走 yield 加有上限的 Sink 后，内存降到预算附近。
+- **适用条件**：查询中任意位置带 CTE（或接收 ≥2 个 Motion），产出方 slice 自身不含 Shared Scan。
+- **不能用调参解决的原因**：batch 模式的执行顺序是 start → 等整个计划结束 → 才读 Sink。给 Sink 设上限后，队列一满扫描就暂停，而读的那一步要等扫描结束才开始，会卡死（guard 就是为此在 batch 模式下关掉上限）。
+- **修复方向**：VEC-YIELD-GUARD 按 slice 判断：只有含 Shared Scan 或接收 ≥2 个 Motion 的 slice 退回 batch，其余 slice 走 yield，并启用有上限的 Sink。改完要回归 S1 列出的那几条查询。
+
 ### M4. 每线程一份的结构按机器核数预分配
 - **现象**：小查询也很慢，耗时和行数几乎无关；空闲的 QE 就占几百 MB；CPU 火焰图里 memset 占比很高。
 - **类别**：D
@@ -154,4 +164,8 @@
 - 在平台期抓 page-fault 会得到 0 个样本：新页面只在内存上涨阶段才会被首次触碰。
 - 采样窗口要覆盖目标阶段：先看曲线，再决定 perf 抓哪一段。
 - 冷缓存和热缓存不能混着比；A/B 顺序用 ABBA 交替。
-- 一个进程从活跃变成空闲后，命令行会去掉 `cmdN sliceN`。按命令行分组时，要沿用它最初的 slice 标签（sampler 已经这样处理）。
+- 一个进程从活跃变成空闲后，命令行会去掉 `cmdN sliceN`。按命令行分组时，要沿用它最初的 slice 标签（sampler 已经这样处理）。要对某个 slice 的 QE 做 perf 或 trim，pid 要在查询开始后 1–2 秒内记下，到时候再找可能找不到。
+- 后台起 sampler 再用裸 `wait` 等采样窗口，会把 sampler 一起等完，窗口落在查询结束之后。窗口要在前台串行跑，最后再 `wait` sampler 的 pid。
+- `pkill -f "<脚本名>"` 会匹配到运行它的 ssh 会话命令行，把自己也杀掉。用 pid 文件，或者 `pgrep -f` 之后排除自己。
+- 开了 THP（`/sys/kernel/mm/transparent_hugepage/enabled` 为 always）时，一次大页缺页映射 2MB 却只计一次，缺页采样会低估这部分内存。memattr 会打印覆盖率和 AnonHugePages 增量。
+- 向量化 EXPLAIN ANALYZE 的算子内存一律显示 1kB，slice 内存比 RssAnon 少约 900 倍，不能用来判断内存。

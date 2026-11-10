@@ -25,7 +25,7 @@ description: 分诊 HashData Lightning 向量化引擎查询的内存高、CPU �
 |---|---|---|---|
 | L0 只读 | 查系统表，读 `/proc`，看日志、`dmesg`、`EXPLAIN`（不带 ANALYZE） | 几乎没有 | 随时可做 |
 | L1 跑查询 | `sampler.py` / `ab.sh` / `EXPLAIN ANALYZE` | 占用 CPU、内存、IO，会影响同机的其他人 | 先确认机器空闲或可以占用；要设超时（脚本默认 `statement_timeout=1800s`）；只跑只读 SQL（脚本会拒绝写语句）；输出过大时取消（默认 200MB） |
-| L2 采样分析 | `flame.sh cpu/faults/switches/offcpu/topdown` | perf 开销约 1–5%；tracepoint 和 BPF 需要 root | 用 `SUDO=sudo`，不要为了方便去改 tracefs 权限或 `perf_event_paranoid`（这是全局配置） |
+| L2 采样分析 | `flame.sh cpu/faults/memattr/switches/offcpu/topdown` | perf 开销约 1–5%；tracepoint 和 BPF 需要 root | 用 `SUDO=sudo`，不要为了方便去改 tracefs 权限或 `perf_event_paranoid`（这是全局配置） |
 | L3 暂停进程 | `stacks.sh`（gdb attach）、gdb 断点、`perf probe` | 进程会被暂停，可能改变正在观察的等待关系；gdb 加载符号很耗 CPU | 只对已经卡住的查询用；先抓一次，有必要再抓多次；限制并发数（`JOBS`） |
 | L4 改环境 | 改 `postgresql.conf`、`gpconfig`、重启集群、改内核参数、清缓存（`drop_caches`） | 影响整台机器上的所有人 | **每次都要先得到用户确认** |
 
@@ -152,7 +152,7 @@ description: 分诊 HashData Lightning 向量化引擎查询的内存高、CPU �
 ## 第 6 步：下钻到代码（只对第 4、5 步挑出的 slice 做）
 
 ### 6.1 引擎自带的统计
-- 向量化 EXPLAIN ANALYZE：每个算子的耗时和行数来自 arrow 的 time collector（`hook/executor.c`）。内存一栏只有 PG 内存上下文和 spill 的 `Work_mem`（`vec_spill_stats.c`），**看不到 arrow 池内和池外的分配**（读代码得出，尚未用实际输出核对）。
+- 向量化 EXPLAIN ANALYZE：每个算子的耗时和行数来自 arrow 的 time collector（`hook/executor.c`）。内存一栏只有 PG 内存上下文和 spill 的 `Work_mem`（`vec_spill_stats.c`），**看不到 arrow 池内和池外的分配**。已用实际输出核对：算子内存一律显示 1kB，slice 内存比 RssAnon 少约 900 倍；算子耗时在 batch 模式下也不能用。**内存按算子拆分不要用它，用 6.3 的 memattr。**
 - debug1 日志：VEC-MEM（池峰值）、BP、VEC-YIELD-GUARD。
 
 ### 6.2 选哪种工具
@@ -162,7 +162,8 @@ description: 分诊 HashData Lightning 向量化引擎查询的内存高、CPU �
 | CPU 花在哪里 | `flame.sh cpu` | 采样窗口要覆盖目标阶段：先看曲线，用 `-p` 指定进程，限定时长。默认用 dwarf 回溯：postgres 和 arrow 一般没有帧指针，用 fp 时大部分帧显示为 `[unknown]` |
 | 比基线多出来的 CPU 在哪 | 两次 `cpu` 加 `flame.sh diff` | 两边的窗口和负载要可比 |
 | 线程不在 CPU 上时在等什么，等了多久 | `flame.sh offcpu`（bcc，计的是时长） | 需要 root 和 BPF 编译环境；退而求其次用 `switches`，它只计次数：1000 次短等待会排在一次 30 秒等待前面 |
-| 新增内存在哪里**被第一次写入** | `flame.sh faults` | 这是"首次触碰"的位置，不一定是分配者：池分配，扫描写入，记在扫描头上。要确认分配者，配合下一行。**只能在内存上涨阶段抓**：到了平台期，0 个样本是正常的 |
+| 新增内存按**算子和函数**拆分，换算成 MB | `flame.sh memattr`（见 6.3） | 首选。缺页采样 + 同窗口 RssAnon 增量 + `opattr.py` 分类 |
+| 新增内存在哪里**被第一次写入**（只要火焰图） | `flame.sh faults` | 这是"首次触碰"的位置，不一定是分配者：池分配，扫描写入，记在扫描头上。要确认分配者，配合下一行。**只能在内存上涨阶段抓**：到了平台期，0 个样本是正常的 |
 | 谁分配、谁没释放 | 分配采样：heaptrack，或 jemalloc prof（需替换分配器，L4）；`perf probe` 挂 malloc（L3，用 `nm` 取 mangled 名，匿名命名空间里的函数可能挂不上）。在两个时间点各采一次再做差 | 开销大，只对小规模复现做 |
 | 内存是什么类型 | `/proc/<pid>/smaps_rollup`、`pmap -x` | 匿名内存还是文件映射；大块 mmap 还是 glibc 堆 |
 | 已经 free 但没还给系统 | glibc `malloc_info` / `malloc_stats`（gdb 里调用，L3） | arrow 构建时关闭了 jemalloc 和 mimalloc（以构建配置为准） |
@@ -173,9 +174,33 @@ description: 分诊 HashData Lightning 向量化引擎查询的内存高、CPU �
 - RssAnon 远大于 arrow 池峰值 → 内存在池外：PAX 缓冲、interconnect 接收缓冲、PG palloc 或 glibc 保留。
 - 两者接近 → 看池内哪个算子用得最多：哈希表、排序、聚合。
 - 首次触碰的调用栈落在扫描、解码或 `StartProducing` 下 → 扫描输出积压（候选，见问题库 M1）。
+- 查询带 CTE，产出方 slice 的内存记在扫描或 join 输出头上，并且在发送开始前一直上涨 → batch 模式下 Sink 没有上限（候选，见问题库 M7）。
 - 落在 interconnect 接收路径 → 和队列参数有关（候选，见问题库 M2）。
 
-### 6.3 插桩
+### 6.3 内存按算子、函数归因（memattr）
+
+回答"这个 slice 的 X GB 是哪个算子、哪个函数用掉的"。
+
+**步骤：**
+1. 用 sampler 曲线找到目标 slice **内存上涨**的时间段，并确认该 slice 的内存倾斜 < 1.1（`summary.txt` 的 skew 列）。倾斜大时要对最大的那个 QE 单独做，不能乘以 QE 数。
+2. **在查询开始后 1–2 秒内**用 `qe_pids.py` 记下每个 slice 的 pid。QE 空闲时会丢掉 slice 标签，等到上涨阶段再找可能找不到。
+3. 在上涨窗口里对一个 QE 跑：`flame.sh memattr <pid> <秒> <out> <该 slice 的 QE 数>`。它会：
+   - 每 16 页（`FAULT_PERIOD`）记一次缺页调用栈，用 dwarf 展开；
+   - 记下窗口前后的 RssAnon 和 AnonHugePages；
+   - 调用 `opattr.py`：每个样本从叶子往上找第一个算子帧，输出每个算子的占比、MB/QE、×QE 数的 GiB，以及算子下占比最高的几个函数。
+4. 多个窗口要串行地在前台跑（一个结束再开下一个）。在后台起 sampler 后用裸 `wait` 等窗口，会把 sampler 也一起等完，窗口就落到查询结束之后了。
+5. 看输出里的**覆盖率**一行（采样到的字节 ÷ RssAnon 增量）：
+   - 约等于 1：占比可以直接换算成 MB；
+   - 远小于 1：有一部分增长没有以 4K 缺页出现，常见原因是 THP 大页（一次缺页映射 2MB，只计一次）或 mremap 扩容。MB 列是假设没覆盖的部分按同样比例分布，要在报告里注明；
+   - 远大于 1：窗口内同时有释放和复用，占比描述的是周转，不是净增长。
+6. `other/unknown` 占比大时，看它打印的栈，在 `opattr.py` 的 `OPS` 里补一条算子规则后重跑（不用重新采样）。
+
+**它能说明什么、不能说明什么：**
+- 记的是**谁第一次写这些页**，不是谁一直持有。batch 模式下 Sink 积压的行，会记在产出这些行的扫描或 join 头上。判断持有者要结合执行模式（第 2 步）和 Sink 是否有上限（问题库 M3、M7）。
+- 已经释放、但 glibc 没还给系统的内存不会出现在新的缺页里。怀疑这种情况时，在 gdb 里对该 QE 调用 `malloc_trim(0)`（L3）做对照，RssAnon 大幅回落就是分配器保留（问题库 M5）。
+- 函数级只到"哪个函数写的"。要知道单个结构为什么这么大（比如每组多少字节），要读代码或插桩打印结构大小（6.4）。
+
+### 6.4 插桩
 静态读代码推不出来时，用项目自带的日志接口（`elog(DEBUG1, ...)` 或 arrow 日志）打印关键变量和所走分支。用二分法缩小范围，直到定位到具体某一行、某一个值。
 
 ---
@@ -209,7 +234,7 @@ description: 分诊 HashData Lightning 向量化引擎查询的内存高、CPU �
 | **F. 数据** | 倾斜；统计过期；数据量与预期不符 | max/median 加绝对量；ANALYZE 时间 | — |
 | **A. 参数** | 换 GUC 后现象明显变化，代码行为符合设计 | 会话级 `PGOPTIONS` 做 A/B（第 10 步） | M2 |
 | **B. 计划** | 引擎不变，换计划形状后资源大幅变化；行数估计偏差大 | EXPLAIN ANALYZE 估计行数对比实际行数；强制改计划后 A/B | C4 |
-| **C. 引擎结构** | 设计上缺少某种机制，调参调不动 | 读代码确认机制缺失，再做原型验证 | M1、C2、S1 |
+| **C. 引擎结构** | 设计上缺少某种机制，调参调不动 | 读代码确认机制缺失，再做原型验证 | M1、M7、C2、S1 |
 | **D. 缺陷** | 行为与设计意图不符，能构造最小复现 | 最小复现，再用 gdb 或日志定位到具体行 | C1、M4 |
 
 - 排查顺序：E → F → A → B → C/D，先便宜后昂贵。
@@ -306,6 +331,7 @@ slice / 做什么 / peak_sum / 单 QE 最大值 / 倾斜 / CPU 秒 / spill / 线
 | `ab.sh` | `ab.sh q.sql "<opts A>" "<opts B>" [轮数=3] [out]`；环境变量 `WARMUP=1`、`TIMEOUT`、`INTERVAL` | L1 | 预热后按 ABBA 顺序交替跑；输出各轮原始值、中位数、组内波动、结果 sha 是否一致，并判断差异是否超出波动 |
 | `plot.py` | `plot.py <run_dir> [--top 8]` | L0 | 输出 `curves.tsv`（另含主机内存、PSI、R 线程数）；有 matplotlib 时另出 png |
 | `stacks.sh` | `stacks.sh <sess_id> [次数=3] [间隔=10] [out]`；环境变量 `JOBS=8` | **L3** | 多次抓栈，判断有没有进展，列出 socket 积压；会暂停进程，CPU 开销大 |
-| `flame.sh` | `cpu / switches / faults / offcpu <pid> <秒> [out]`；`topdown <pid> <秒> [指标组]`；`diff a b` | L2 | 需要 root 的模式加 `SUDO=sudo`；有 `$FLAMEGRAPH` 时才生成 svg，否则只留原始文本 |
+| `flame.sh` | `cpu / switches / faults / offcpu <pid> <秒> [out]`；`memattr <pid> <秒> [out] [QE 数]`；`topdown <pid> <秒> [指标组]`；`diff a b` | L2 | 需要 root 的模式加 `SUDO=sudo`；有 `$FLAMEGRAPH` 时才生成 svg，否则只留原始文本。memattr 输出 `.window`、`.perfscript`、`.opattr.txt` |
+| `opattr.py` | `opattr.py <perf script 文本> <增量MB> [--thp-mb M] [--qe N] [--sites 4] [--min 0.5]` | L0 | 离线分类，memattr 会自动调用；改了 `OPS` 规则后可以对旧的 perfscript 重跑 |
 
 更具体的 perf 用法可参考 `perf-tools:perf-profiling` skill（有就用，不是必需的）。

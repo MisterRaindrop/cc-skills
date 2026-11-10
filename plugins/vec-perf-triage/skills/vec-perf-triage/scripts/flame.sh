@@ -9,6 +9,11 @@
 #   flame.sh faults   <pid> <sec> [out]   page faults by stack = FIRST TOUCH of new pages,
 #                                         not necessarily the allocator (a pool allocates,
 #                                         the scan touches)
+#   flame.sh memattr  <pid> <sec> [out] [nqe]
+#                                         page faults (1 sample / FAULT_PERIOD=16 pages)
+#                                         + RssAnon before/after, then opattr.py: share and
+#                                         MB per operator and function (x nqe for the slice).
+#                                         Run ONLY while the QE's memory grows.
 #   flame.sh topdown  <pid> <sec> [groups=TopDownL1]
 #                                         perf stat metric groups in ONE window; lists the
 #                                         groups this CPU supports if the name is unknown
@@ -23,7 +28,7 @@
 # Permissions: tracepoints (switches) and BPF (offcpu) usually need root; run with
 # SUDO=sudo (prefixes perf / offcputime) instead of loosening tracefs or perf_event_paranoid.
 set -euo pipefail
-[ $# -ge 1 ] || { sed -n 2,20p "$0"; exit 2; }
+[ $# -ge 1 ] || { sed -n 2,29p "$0"; exit 2; }
 MODE=$1; shift
 FG=${FLAMEGRAPH:-$HOME/FlameGraph}
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT           # fresh perf.data: a stale root-owned one records 0 samples
@@ -52,6 +57,25 @@ case $MODE in
   cpu)      perf_mode "$1" "$2" "${3:-./cpu_$1}" -F 99 ;;
   switches) perf_mode "$1" "$2" "${3:-./switches_$1}" -e sched:sched_switch ;;
   faults)   perf_mode "$1" "$2" "${3:-./faults_$1}" -e page-faults ;;
+  memattr)
+    PID=$1; SEC=$2; OUT=${3:-./memattr_$1}; NQE=${4:-0}; alive "$PID"
+    kb() { awk -v k="^$1:" '$0 ~ k {print $2; f=1} END {if (!f) print 0}' "$2" 2>/dev/null || echo 0; }
+    snap() { echo "$(kb RssAnon /proc/$PID/status) $(kb AnonHugePages /proc/$PID/smaps_rollup)"; }
+    CG=${CALLGRAPH:-dwarf}; [ "$CG" = dwarf ] && CG=dwarf,16384
+    read -r A HA < <(snap); T=$(date +%s)
+    $P record -e page-faults -c "${FAULT_PERIOD:-16}" --call-graph "$CG" \
+      -p "$PID" -o "$TMP/perf.data" -- sleep "$SEC" 2> "$TMP/rec.err" || {
+      cat "$TMP/rec.err" >&2
+      grep -qi "permission" "$TMP/rec.err" && echo "hint: rerun with SUDO=sudo" >&2
+      exit 1; }
+    read -r B HB < <(snap)
+    [ "$B" -gt 0 ] || { B=$A; HB=$HA; echo "pid $PID exited during the window: delta unknown" >&2; }
+    D=$(( (B - A) / 1024 )); DH=$(( (HB - HA) / 1024 ))
+    echo "pid=$PID t0=$T sec=$SEC RssAnon ${A}kB -> ${B}kB delta=${D}MB AnonHugePages delta=${DH}MB" | tee "$OUT.window"
+    $P script -i "$TMP/perf.data" > "$OUT.perfscript" 2>/dev/null
+    python3 "$(dirname "$0")/opattr.py" "$OUT.perfscript" "$D" --thp-mb "$DH" \
+      --period "${FAULT_PERIOD:-16}" --qe "$NQE" | tee "$OUT.opattr.txt"
+    ;;
   offcpu)
     PID=$1; SEC=$2; OUT=${3:-./offcpu_$1}; alive "$PID"
     T=$(command -v offcputime-bpfcc || command -v offcputime || ls /usr/share/bcc/tools/offcputime 2>/dev/null || true)
@@ -80,5 +104,5 @@ case $MODE in
     "$FG/flamegraph.pl" --title "diff: red = more in $(basename "$B")" "$OUT.folded" > "$OUT.svg"
     echo "wrote $OUT.svg"
     ;;
-  *) sed -n 2,20p "$0"; exit 2 ;;
+  *) sed -n 2,29p "$0"; exit 2 ;;
 esac

@@ -1,7 +1,7 @@
 {
     "name": "vec-perf-triage",
     "description": "Triage memory, CPU, slowness, hangs and concurrent OOM of HashData Lightning / Cloudberry vectorized-engine queries: per-slice time sampling, balanced A/B, hang snapshots and profiling scripts, a pattern library, and a report with confidence levels.",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "author": {
         "name": "MisterRaindrop"
     }
