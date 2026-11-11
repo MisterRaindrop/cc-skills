@@ -32,7 +32,7 @@
 | C4 | 2026 | q24 | 强制两阶段 agg 后为 0.98 倍；q23 / q78 触发了 OOM 保护 |
 | S1 | 2026 | q75 / q14 / q58 | 卡住，CPU 约 3%，一直到语句超时；后来加了 VEC-YIELD-GUARD 规避 |
 | S2 | 2026 | q31 / q74 / q79 | 没有线程池、又打开反压时卡住（`BuildSink` 中的例外） |
-| M8 | 2026-11 | q23a slice1；store_sales 300 天的对照实验 | q23a：6.83M 组/QE，行宽 40B + 字符串 30B，不重复约 0.48G/QE，实测顶到 4.0G 的上限并 spill（约 8.9 倍）。对照实验：组数约 140 万/QE，键 (item, date) 分散型 +0.19G（约 4.9 倍重复），票据号这种相邻型 +0。完整过程见 `memattr-example-q23.md` |
+| M8 | 2026-11 | q23a slice1；store_sales 300 天的对照实验 | q23a：6.83M 组/QE，行宽 40B + 字符串 30B，不重复约 0.48G/QE，实测顶到 4.0G 的上限并 spill（约 8.9 倍）。对照实验：组数约 140 万/QE，键 (item, date) 分散型 +0.19G（约 4.9 倍重复），票据号这种相邻型 +0 |
 | M7 | 2026-11 | TPC-DS 1TB q23a（带 CTE，全部 slice 为 batch 模式） | 峰值 359G 中：slice2（扫描 + join item + substr）91G，按每行约 42B × 6878 万行/QE 估算与实测 2.87G/QE 一致；slice5（纯扫描）68G；slice9（扫描 + join date_dim）58G。早先的 slice5 yield 原型把单 QE 从 2.14G 降到 0.21G。按 slice 放开 guard 的整体收益尚未验证 |
 
 ## memattr 案例：q23a 各 slice 的函数级拆分（2026-11-10，ARM 测试机）
@@ -50,7 +50,7 @@
 - 覆盖率（采样字节 ÷ RssAnon 增量）：slice5 89%、slice1 87%、slice9 62%、slice2 34%。slice2 那个窗口有约 2/3 的增长没有以 4K 缺页出现，MB 列是按比例推算的。这台机器的 THP 为 always，可能是大页，也可能是 mremap 扩容；当时没有记录 AnonHugePages，原因未确认（之后 memattr 已经会记录）。
 - slice9 发送完后的内存是 glibc 保留：对 32 个 QE 调 `malloc_trim(0)` 后从 58.3G 降到 0.65G，整体峰值从 359G 降到 300.6G，耗时不变。
 - `sonicagg_spill_memory_mb` 从 4096 改为 2048（各 2 轮）：峰值 358.7G → 295.7G，耗时 184s → 246s（+33%），spill 写出 4.2G → 70.8G。这个参数和 `hashjoin_spill_memory_mb`、`winagg_spill_memory_mb` 都按**每个算子、每个 QE** 计，默认都是 4096，不是整条查询的总量。q23 的 HashJoin 哈希表远小于上限，调 `hashjoin_spill_memory_mb` 没有作用。
-- slice1 每组约 590 字节，是因为分组被重复存储（M8），见 `memattr-example-q23.md` 的 3.1 节。
+- slice1 每组约 590 字节，是因为分组被重复存储（M8）。
 
 ## 脚本验证记录
 - 2026-11-10，ARM 测试机，q23a 完整流程跑了 2 遍（基线构建）：
