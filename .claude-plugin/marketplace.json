@@ -67,6 +67,12 @@
             "source": "./plugins/vec-perf-triage",
             "description": "Triage memory, CPU, slowness, hangs and concurrent OOM of HashData Lightning / Cloudberry vectorized-engine queries: per-slice time sampling, balanced A/B, hang snapshots and profiling scripts, a pattern library, and a report with confidence levels.",
             "version": "1.2.0"
+        },
+        {
+            "name": "tpc-bench",
+            "source": "./plugins/tpc-bench",
+            "description": "One-sentence TPC-H / TPC-DS performance runs for HashData Lightning / Cloudberry (single or multi host, unattended overnight): deploys a CI build, runs proteus (pipeline on/off, N rounds, N concurrent streams), samples per-query resources, compares with the last run, triages the slowest queries with vec-perf-triage, and writes HTML / Markdown reports.",
+            "version": "1.0.0"
         }
     ]
 }

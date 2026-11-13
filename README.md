@@ -85,6 +85,16 @@ ask why a vectorized query uses too much memory or CPU, is slow, or hangs.
 
 There are three ways to install these plugins. Pick whichever works for you.
 
+### tpc-bench
+
+One-sentence TPC-H / TPC-DS performance runs on HashData Lightning / Cloudberry ("run 1TB tpcds on host 56 tonight"):
+it fills in hosts, cluster, build and data by itself, deploys an umbrella CI build into its own directory, loads data
+with proteus, and runs the benchmark single- or multi-host, unattended overnight (multi-host only when all hosts are idle).
+
+| Skill | What it does |
+|-------|-------------|
+| `tpc-bench` | Test matrix: pipeline off/on (`--pipeline`), N rounds per query with the median (`--rounds`, default 3), N concurrent streams (`--streams`). Per-query resources from /proc while timing (memory, CPU, IO, spill per slice, skew, single-thread bottlenecks), plans and result fingerprints. Report ① results, ② comparison with the last comparable run, phase 2 for slow queries (ABBA verify → bisect to the pipeline → perf), vec-perf-triage of the 3 slowest queries of every run, report ③ root cause by `claude -p`; HTML pages for the formal comparison (`report_html.py`, expandable plans with structural diff) and the slowest-SQL analysis (`triage_html.py`). Site-specific hosts, keys and paths live in `~/.tpc-bench/site.env` (see `site.env.example`). Needs the `vec-perf-triage` plugin. |
+
 ### Option A: Quick Test (no install needed)
 
 Just want to try a plugin? Use the `--plugin-dir` flag. Nothing is installed permanently.

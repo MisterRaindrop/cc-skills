@@ -1,0 +1,8 @@
+{
+    "name": "tpc-bench",
+    "description": "One-sentence TPC-H / TPC-DS performance runs for HashData Lightning / Cloudberry (single or multi host, unattended overnight): deploys a CI build, runs proteus (pipeline on/off, N rounds, N concurrent streams), samples per-query resources, compares with the last run, triages the slowest queries with vec-perf-triage, and writes HTML / Markdown reports.",
+    "version": "1.0.0",
+    "author": {
+        "name": "MisterRaindrop"
+    }
+}
